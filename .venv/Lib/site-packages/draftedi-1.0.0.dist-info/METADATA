@@ -1,0 +1,48 @@
+Metadata-Version: 2.4
+Name: draftedi
+Version: 1.0.0
+Summary: Production-grade X12 EDI parser for Python
+Author: Yaw Way
+License: MIT
+Project-URL: Homepage, https://github.com/yawway365/draftedi-core
+Project-URL: Repository, https://github.com/yawway365/draftedi-core
+Project-URL: Issues, https://github.com/yawway365/draftedi-core/issues
+Keywords: edi,x12,parser,healthcare,b2b,integration,ansi
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Office/Business
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.8; extra == "dev"
+Requires-Dist: mypy>=1.13; extra == "dev"
+Dynamic: license-file
+
+# DraftEDI
+
+  Production-grade X12 EDI parser for Python.
+
+  ## Installation
+
+  ```bash
+  pip install draftedi
+
+  Status
+
+  v1.0.0 — Parser module. Under active development.
+
+  License
+
+  MIT — see ./LICENSE for details.

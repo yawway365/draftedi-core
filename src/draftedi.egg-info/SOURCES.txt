@@ -1,0 +1,9 @@
+LICENSE
+README.md
+pyproject.toml
+src/draftedi/__init__.py
+src/draftedi.egg-info/PKG-INFO
+src/draftedi.egg-info/SOURCES.txt
+src/draftedi.egg-info/dependency_links.txt
+src/draftedi.egg-info/requires.txt
+src/draftedi.egg-info/top_level.txt

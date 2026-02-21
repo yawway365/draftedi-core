@@ -8,10 +8,10 @@ Production-grade X12 EDI parser for Python.
 pip install draftedi
 ```
 
-Status
+## Status
 
 v1.0.0 — Parser module. Under active development.
 
-License
+## License
 
 MIT — see ./LICENSE for details.

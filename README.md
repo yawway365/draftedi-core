@@ -1,16 +1,17 @@
 # DraftEDI
 
-  Production-grade X12 EDI parser for Python.
+Production-grade X12 EDI parser for Python.
 
-  ## Installation
+## Installation
 
-  ```bash
-  pip install draftedi
+```bash
+pip install draftedi
+```
 
-  Status
+Status
 
-  v1.0.0 — Parser module. Under active development.
+v1.0.0 — Parser module. Under active development.
 
-  License
+License
 
-  MIT — see ./LICENSE for details.
+MIT — see ./LICENSE for details.

@@ -1,38 +1,38 @@
 # Build artifacts
-  dist/
-  build/
-  *.egg-info/
-  *.egg
+dist/
+build/
+*.egg-info/
+*.egg
 
-  # Python
-  __pycache__/
-  *.py[cod]
-  *.pyo
-  *.pyd
-  .python-version
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
 
-  # Virtual environments
-  venv/
-  .venv/
-  ENV/
+# Virtual environments
+venv/
+.venv/
+ENV/
 
-  # Testing
-  .pytest_cache/
-  htmlcov/
-  .coverage
-  .coverage.*
-  coverage.xml
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
 
-  # Type checking
-  .mypy_cache/
+# Type checking
+.mypy_cache/
 
-  # IDE
-  .vscode/
-  .idea/
-  *.swp
-  *.swo
-  *~
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-  # OS
-  .DS_Store
-  Thumbs.db
+# OS
+.DS_Store
+Thumbs.db

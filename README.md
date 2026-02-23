@@ -1,6 +1,6 @@
 # draftedi
 
-Production-grade X12 EDI parser and validator for Python. Zero dependencies.
+EDI parser and validator for Python. Zero dependencies.
 
 ![PyPI version](https://img.shields.io/badge/pypi-1.1.0-blue)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)

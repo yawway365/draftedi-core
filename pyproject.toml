@@ -1,14 +1,14 @@
 [project]
 name = "draftedi"
 version = "1.1.0"
-description = "Production-grade X12 EDI parser for Python"
+description = "EDI parser and validator for Python. Zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
-    {name = "Jackson Yaw"},
+    {name = "Jackson Yaw", email = 'jacksonyawbiz@gmail.com'},
 ]
-keywords = ["edi", "x12", "parser", "healthcare", "b2b", "integration", "ansi"]
+keywords = ["edi", "x12", "parser", "healthcare", "b2b", "integration", "ansi", "850", "810", "837", "parse-edi"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

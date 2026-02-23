@@ -1,12 +1,12 @@
 [project]
 name = "draftedi"
-version = "1.0.0"
+version = "1.1.0"
 description = "Production-grade X12 EDI parser for Python"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
-    {name = "Yaw Way"},
+    {name = "Jackson Yaw"},
 ]
 keywords = ["edi", "x12", "parser", "healthcare", "b2b", "integration", "ansi"]
 classifiers = [
@@ -29,6 +29,7 @@ dependencies = []
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "pytest-timeout>=2.0",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -47,7 +48,10 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--tb=short", "-q"]
+addopts = ["--tb=short", "-q", "--timeout=30"]
+markers = [
+    "known_bug: marks tests for known parser bugs",
+]
 
 [tool.ruff]
 target-version = "py39"
@@ -55,4 +59,6 @@ line-length = 100
 
 [tool.mypy]
 python_version = "3.9"
-check_untyped_defs = true
+strict = true
+warn_return_any = true
+warn_unused_configs = true

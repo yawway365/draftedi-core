@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from draftedi.validate import (
     check_element_data_type,

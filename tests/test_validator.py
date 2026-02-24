@@ -8,10 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-import pytest
-
 from draftedi.validator.core import ValidationError, ValidationResult, X12Validator
-from draftedi.spec.protocol import TransactionSetSpec, SegmentSpec, ElementSpec, RelationalCondition
+from draftedi.spec.protocol import TransactionSetSpec, SegmentSpec, ElementSpec
 
 
 # ---------------------------------------------------------------------------
@@ -169,9 +167,11 @@ class TestX12Validator:
     def test_valid_transaction_with_spec(self):
         class SpecProvider:
             def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
-                return _make_transaction_set_spec([
-                    _make_segment_spec("BEG", requirement="M"),
-                ])
+                return _make_transaction_set_spec(
+                    [
+                        _make_segment_spec("BEG", requirement="M"),
+                    ]
+                )
 
             def get_element_codes(self, version: str, element_id: str) -> list[str]:
                 return []
@@ -199,9 +199,11 @@ class TestX12Validator:
     def test_missing_mandatory_segment_produces_error(self):
         class SpecProvider:
             def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
-                return _make_transaction_set_spec([
-                    _make_segment_spec("BEG", requirement="M"),
-                ])
+                return _make_transaction_set_spec(
+                    [
+                        _make_segment_spec("BEG", requirement="M"),
+                    ]
+                )
 
             def get_element_codes(self, version: str, element_id: str) -> list[str]:
                 return []
@@ -226,6 +228,7 @@ class TestX12Validator:
 
     def test_from_draftedi_validator_import(self):
         from draftedi.validator import X12Validator, ValidationResult, ValidationError
+
         assert X12Validator
         assert ValidationResult
         assert ValidationError

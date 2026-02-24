@@ -7,15 +7,12 @@ Covers: spec-absent path (is_valid=None), spec-present path, parse failure
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 from typing import Optional
 
-import pytest
-
-from draftedi import validate_edi, X12Validator, ValidationResult, ValidationError
-from draftedi.spec.protocol import TransactionSetSpec, SegmentSpec
 from factories import SampleX12
+from draftedi import validate_edi, ValidationResult
+from draftedi.spec.protocol import TransactionSetSpec, SegmentSpec
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +72,7 @@ class TestValidateEdi:
 
     def test_imports_from_top_level(self) -> None:
         from draftedi import validate_edi, X12Validator, ValidationResult, ValidationError
+
         assert validate_edi
         assert X12Validator
         assert ValidationResult
@@ -82,6 +80,7 @@ class TestValidateEdi:
 
     def test_all_exports_in_dunder_all(self) -> None:
         import draftedi
+
         assert "validate_edi" in draftedi.__all__
         assert "X12Validator" in draftedi.__all__
         assert "ValidationResult" in draftedi.__all__
@@ -89,6 +88,7 @@ class TestValidateEdi:
 
     def test_validate_edi_with_json_skeleton_provider(self, tmp_path: Path) -> None:
         from draftedi.spec.json_skeleton_provider import JSONSkeletonSpecProvider
+
         spec_data = {
             "_meta": {
                 "format": "draftedi-skeleton-spec",
@@ -110,6 +110,7 @@ class TestValidateEdi:
 
     def test_does_not_break_parse_edi_file(self) -> None:
         from draftedi import parse_edi_file
+
         edi = _minimal_edi()
         parsed = parse_edi_file(edi.encode())
         assert parsed is not None

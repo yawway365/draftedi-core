@@ -9,10 +9,7 @@ no Protocol import is needed in tests to verify duck-typing compliance. (ref: DL
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from draftedi.spec.json_skeleton_provider import JSONSkeletonSpecProvider
 
@@ -184,4 +181,5 @@ class TestJSONSkeletonSpecProvider:
 
     def test_importable_from_draftedi_spec(self) -> None:
         from draftedi.spec import JSONSkeletonSpecProvider as JSP
+
         assert JSP is not None

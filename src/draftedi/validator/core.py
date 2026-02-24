@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from draftedi.spec.protocol import X12SpecProvider, TransactionSetSpec, SegmentSpec
+from draftedi.spec.protocol import X12SpecProvider, TransactionSetSpec
 import draftedi.validate as _validate
 
 
@@ -190,9 +190,7 @@ class X12Validator:
             spec_provider=type(self._provider).__name__,
         )
 
-    def _check_envelope(
-        self, transaction: dict[str, Any]
-    ) -> list[ValidationError]:
+    def _check_envelope(self, transaction: dict[str, Any]) -> list[ValidationError]:
         # Delegates to validate.check_envelope. Thin delegation: X12Validator holds
         # no check logic so validate.py remains the single authoritative source for
         # all check behavior; no spec required for envelope checks. (ref: DL-001)
@@ -251,34 +249,40 @@ class X12Validator:
                     value, espec["data_type"], espec["element_id"]
                 )
                 if type_err:
-                    errors.append(ValidationError(
-                        segment_id=seg_id,
-                        element_pos=pos,
-                        error_type="TYPE_ERROR",
-                        value=value or None,
-                        message=type_err,
-                    ))
+                    errors.append(
+                        ValidationError(
+                            segment_id=seg_id,
+                            element_pos=pos,
+                            error_type="TYPE_ERROR",
+                            value=value or None,
+                            message=type_err,
+                        )
+                    )
                 len_err = _validate.check_element_length(
                     value, espec["min_length"], espec["max_length"]
                 )
                 if len_err:
-                    errors.append(ValidationError(
-                        segment_id=seg_id,
-                        element_pos=pos,
-                        error_type="INVALID_LENGTH",
-                        value=value or None,
-                        message=len_err,
-                    ))
+                    errors.append(
+                        ValidationError(
+                            segment_id=seg_id,
+                            element_pos=pos,
+                            error_type="INVALID_LENGTH",
+                            value=value or None,
+                            message=len_err,
+                        )
+                    )
                 if espec["data_type"] == "ID" and espec.get("repetition_count", 0) > 0:
                     codes = self._provider.get_element_codes(version, espec["element_id"])
                     if codes and value and value not in codes:
-                        errors.append(ValidationError(
-                            segment_id=seg_id,
-                            element_pos=pos,
-                            error_type="INVALID_CODE",
-                            value=value or None,
-                            message=f"Element {espec['element_id']}: value {value!r} not in allowed codes",
-                        ))
+                        errors.append(
+                            ValidationError(
+                                segment_id=seg_id,
+                                element_pos=pos,
+                                error_type="INVALID_CODE",
+                                value=value or None,
+                                message=f"Element {espec['element_id']}: value {value!r} not in allowed codes",
+                            )
+                        )
         return errors
 
     def _check_relational_conditions(

@@ -2,7 +2,7 @@
 
 EDI parser and validator for Python. Zero dependencies.
 
-![PyPI version](https://img.shields.io/badge/pypi-1.1.0-blue)
+![PyPI version](https://img.shields.io/badge/pypi-1.3.0-blue)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![MIT license](https://img.shields.io/badge/license-MIT-green)
 ![CI](https://img.shields.io/badge/CI-passing-brightgreen)
@@ -100,6 +100,107 @@ issues = check_mandatory_segments(loop_assignments, spec_segments)
 
 The same `loop_assignments` output can be passed to `check_segment_max_use` and `check_relational_conditions`.
 
+## Validation API (v1.3.0)
+
+### validate_edi() — convenience function
+
+`validate_edi(edi_text, spec_provider=None) -> ValidationResult`
+
+The top-level entry point for validation. Accepts raw X12 text. Never raises.
+
+**Without a spec provider** — envelope check only. `is_valid` is `None` (indeterminate), not `False`.
+
+```python
+from draftedi import validate_edi
+
+result = validate_edi(edi_text)
+print(result.is_valid)   # None — indeterminate without spec data
+print(result.errors)     # list[ValidationError] from envelope check
+print(result.warnings)   # list[str]
+```
+
+**With a spec provider** — full structural validation against your spec data.
+
+```python
+from draftedi import validate_edi
+from draftedi.spec import JSONSkeletonSpecProvider
+
+provider = JSONSkeletonSpecProvider("path/to/specs/")
+result = validate_edi(edi_text, spec_provider=provider)
+
+print(result.is_valid)         # True or False
+print(result.spec_provider)    # "JSONSkeletonSpecProvider"
+for err in result.errors:
+    print(err.segment_id, err.error_type, err.message)
+```
+
+### JSONSkeletonSpecProvider — BYOS with JSON files
+
+Loads structural-only JSON skeleton files from a local directory. Files must be named `{version}-{tsid}.json` (e.g., `005010-850.json`). Returns `None` for any missing file rather than raising. Caches loaded specs per instance.
+
+No X12 spec data is included or required — you supply the files.
+
+```python
+from draftedi.spec import JSONSkeletonSpecProvider
+
+provider = JSONSkeletonSpecProvider("path/to/specs/")
+result = validate_edi(edi_text, spec_provider=provider)
+```
+
+See `specs/README.md` in this repository for the JSON skeleton file format and field reference.
+
+Note: `element_name` and `segment_name` fields are `None` in skeleton providers. ASC X12 copyrights prohibit bundling human-readable element and segment names.
+
+### X12Validator — direct usage
+
+Accepts any object that satisfies the `X12SpecProvider` Protocol via structural subtyping — no explicit inheritance required.
+
+```python
+from draftedi import X12Validator
+from draftedi.spec import JSONSkeletonSpecProvider
+
+provider = JSONSkeletonSpecProvider("path/to/specs/")
+validator = X12Validator(provider)
+
+# parsed_transaction: a Transaction dict from parse_edi_file()
+result = validator.validate_transaction(parsed_transaction, version="005010")
+
+print(result.is_valid)
+for err in result.errors:
+    print(f"{err.segment_id}[{err.element_pos}] {err.error_type}: {err.message}")
+```
+
+### ValidationResult and ValidationError
+
+`ValidationResult` is a dataclass returned by `validate_edi()` and `X12Validator.validate_transaction()`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `is_valid` | `Optional[bool]` | `None` = indeterminate (no spec); `True`/`False` when spec is present |
+| `errors` | `list[ValidationError]` | Structured error records |
+| `warnings` | `list[str]` | Non-fatal advisory strings |
+| `spec_provider` | `Optional[str]` | Name of the provider class used, or `None` |
+
+`ValidationError` is a dataclass with the following fields:
+
+| Field | Type |
+|---|---|
+| `segment_id` | `str` |
+| `element_pos` | `Optional[int]` |
+| `error_type` | `str` |
+| `value` | `Optional[str]` |
+| `message` | `str` |
+
+`error_type` values: `MISSING_MANDATORY`, `INVALID_LENGTH`, `INVALID_CODE`, `MAX_USE_EXCEEDED`, `RELATIONAL_CONDITION`, `TYPE_ERROR`.
+
+### Import paths
+
+```python
+from draftedi import validate_edi, X12Validator, ValidationResult, ValidationError
+from draftedi.spec import JSONSkeletonSpecProvider
+from draftedi.validator import X12Validator, ValidationResult, ValidationError
+```
+
 ## API reference
 
 ### Parser functions
@@ -155,6 +256,35 @@ The parsed hierarchy maps directly onto the X12 envelope structure.
 **`SegEntry`** — wraps a segment ID and its spec dict. Used internally by spec-aware functions.
 
 **`LoopEntry`** — represents a node in the navigation tree. Fields: `loop_id`, `trigger_id` (the segment ID that starts this loop), `children` (list of `LoopEntry`).
+
+### Validator — high-level API (v1.3.0)
+
+- `validate_edi(edi_text: str, spec_provider=None) -> ValidationResult` — top-level convenience function. Envelope check only when `spec_provider` is omitted (`is_valid=None`); full validation when a provider is supplied.
+- `X12Validator(spec_provider)` — wraps the low-level check functions. Accepts any object satisfying the `X12SpecProvider` Protocol (structural subtyping). Method: `validate_transaction(parsed_transaction, version) -> ValidationResult`.
+- `JSONSkeletonSpecProvider(directory: str)` — loads `{version}-{tsid}.json` skeleton files from `directory`. Returns `None` for missing specs. Import from `draftedi.spec`.
+
+### Validator — high-level types (v1.3.0)
+
+**`ValidationResult`** — dataclass returned by `validate_edi()` and `X12Validator.validate_transaction()`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `is_valid` | `Optional[bool]` | `None` = indeterminate |
+| `errors` | `list[ValidationError]` | Structured error records |
+| `warnings` | `list[str]` | Non-fatal advisory strings |
+| `spec_provider` | `Optional[str]` | Provider class name, or `None` |
+
+**`ValidationError`** — dataclass attached to `ValidationResult.errors`.
+
+| Field | Type |
+|---|---|
+| `segment_id` | `str` |
+| `element_pos` | `Optional[int]` |
+| `error_type` | `str` |
+| `value` | `Optional[str]` |
+| `message` | `str` |
+
+`error_type` values: `MISSING_MANDATORY`, `INVALID_LENGTH`, `INVALID_CODE`, `MAX_USE_EXCEEDED`, `RELATIONAL_CONDITION`, `TYPE_ERROR`.
 
 ## Development
 

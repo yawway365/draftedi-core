@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+### Added
+
+**Validator — high-level API**
+
+- `validate_edi(edi_text, spec_provider=None) -> ValidationResult` — top-level convenience function (S2-9). Envelope check only when called without a spec provider; `is_valid` is `None` (indeterminate), not `False`. Full structural validation when a spec provider is supplied. Never raises. Exported from `draftedi`.
+- `X12Validator(spec_provider)` — class that wraps the existing `validate.py` check functions (S2-7). Accepts any object satisfying the `X12SpecProvider` Protocol via structural subtyping; no inheritance required. Method: `validate_transaction(parsed_transaction, version) -> ValidationResult`. Exported from `draftedi` and `draftedi.validator`.
+- `JSONSkeletonSpecProvider(directory)` — BYOS spec provider that loads structural-only JSON skeleton files from a local directory (S2-8). File naming convention: `{version}-{tsid}.json` (e.g., `005010-850.json`). Returns `None` on missing file rather than raising. Caches loaded specs per instance. Satisfies `X12SpecProvider` via structural subtyping; no explicit inheritance. `element_name` and `segment_name` fields are `None` (ASC X12 copyright). Exported from `draftedi.spec`.
+
+**Dataclasses**
+
+- `ValidationResult` — dataclass with fields: `is_valid` (`Optional[bool]`), `errors` (`list[ValidationError]`), `warnings` (`list[str]`), `spec_provider` (`Optional[str]`). Exported from `draftedi` and `draftedi.validator`.
+- `ValidationError` — dataclass with fields: `segment_id`, `element_pos`, `error_type`, `value`, `message`. `error_type` values: `MISSING_MANDATORY`, `INVALID_LENGTH`, `INVALID_CODE`, `MAX_USE_EXCEEDED`, `RELATIONAL_CONDITION`, `TYPE_ERROR`. Exported from `draftedi` and `draftedi.validator`.
+
+**Documentation**
+
+- `specs/README.md` — documents the BYOS JSON skeleton file format, required fields, and workflow for authoring custom spec files.
+
+**Tests**
+
+- 205 passing tests across parser, validator, and high-level API surface.
+
 ## [1.2.0] - 2026-02-24
 
 ### Added

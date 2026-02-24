@@ -1,0 +1,43 @@
+# Separate from ci.yml to isolate the OIDC trust boundary: the 'pypi' environment
+# and id-token: write permission are only active for tag-triggered publish jobs,
+# not every CI run. (ref: DL-005)
+#
+# Pre-requisites before first publish:
+#   1. Configure OIDC Trusted Publisher in PyPI project settings (GitHub Actions provider)
+#   2. Create GitHub Environment 'pypi' in repo Settings > Environments
+#   Publish job fails with a clear error if either is missing.
+name: Publish
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src/ tests/
+      - run: ruff format --check src/ tests/
+      - run: mypy src/
+      - run: pytest --cov=draftedi --cov-report=term-missing
+
+  publish:
+    needs: [ci]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1

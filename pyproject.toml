@@ -1,6 +1,6 @@
 [project]
 name = "draftedi"
-version = "1.1.0"
+version = "1.2.0"
 description = "EDI parser and validator for Python. Zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}
@@ -62,3 +62,4 @@ python_version = "3.9"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+files = ["src"]  # Bare 'mypy' without files is unreliable; explicit src/ path ensures consistent discovery

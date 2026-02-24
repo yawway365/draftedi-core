@@ -36,3 +36,13 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude
+.claude/
+*CLAUDE.md
+tests/README.md
+
+.benchmarks/
+.ruff_cache/
+src/draftedi/README.md
+

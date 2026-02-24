@@ -167,7 +167,7 @@ mypy src
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+We welcome contributions. DraftEDI uses a Contributor License Agreement for code changes — see [CONTRIBUTING.md](CONTRIBUTING.md) for details. Doc fixes and small patches (15 lines or fewer) don't require signing.
 
 ## License
 

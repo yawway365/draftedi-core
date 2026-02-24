@@ -1,49 +1,76 @@
 # Contributing to draftedi-core
 
-`draftedi-core` is an MIT-licensed open-source library and contributions are welcome. This document covers everything you need to get started: signing the CLA, setting up a development environment, running checks, and opening a pull request.
+`draftedi-core` is a MIT-licensed open-source library and contributions are welcome. This document covers everything you need to get started.
 
 ## Contributor License Agreement
 
-You will be asked to sign a CLA (Contributor License Agreement) when you open your first pull request. The CLA ensures contributor IP is properly assigned to the project. **PRs cannot be merged without a completed CLA.** The process is handled automatically via a bot comment on your PR.
+DraftEDI is a commercial open-source project. The core library is MIT-licensed and always will be. We also operate a commercial SaaS platform built on this library. To keep these coexisting cleanly — both legally and long-term — we require a Contributor License Agreement (CLA) for code contributions.
 
-## Development setup
+**What the CLA does:** It grants DraftEDI a license to include your contribution in both the MIT library and the commercial platform. You keep full copyright over your code. The CLA doesn't transfer ownership — it grants a license.
 
-```
+**What it doesn't do:** It doesn't restrict what you can do with your own code. You can still publish your contribution elsewhere, use it in your own projects, do anything you'd normally do with your own work.
+
+**How signing works:** When you open a pull request, a bot will post a comment with a one-click link. You authorize via GitHub OAuth. It takes about 30 seconds.
+
+**Trivial patch exception:** Changes that are 15 lines or fewer, or documentation-only changes (fixing typos, improving wording), do not require a CLA. The bot will recognize these automatically.
+
+**CLA text:** [`.github/CLA.md`](.github/CLA.md). It's short — under 500 words.
+
+If you have questions about the CLA, open a [Discussion](https://github.com/yawway365/draftedi-core/discussions) or email jacksonyawbiz@gmail.com.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
+
+## Development Setup
+
+```bash
 git clone https://github.com/yawway365/draftedi-core.git
 cd draftedi-core
 pip install -e ".[dev]"
 ```
 
-## Running checks
+## Running Checks
 
-```
-pytest                    # 170 tests
+```bash
+pytest                    # run the test suite
 ruff check src tests      # linting (100-char line length, Python 3.9 target)
 mypy src                  # type checking (strict mode)
 ```
 
 All three must pass before opening a PR.
 
-## Pull request guidelines
+## How to Contribute
 
-- **New behavior:** add tests that cover the new code paths.
-- **Bug fixes:** add a regression test if one does not already exist.
-- **Type annotations:** keep `mypy` strict passing. All public functions must have complete type annotations.
-- **Linting:** keep `ruff` passing. Line length is 100 characters. Target Python 3.9 for compatibility.
-- **Zero runtime dependencies:** do not add packages to the `dependencies` list in `pyproject.toml`. Dev-only tools go under `[dev]` extras only.
-- **PR description:** describe what your PR does and why. A sentence or two is enough for small changes; more context is welcome for larger ones.
+### Reporting Bugs
 
-## Reporting bugs
+Open an issue using the [Bug Report](.github/ISSUE_TEMPLATE/bug_report.md) template. **Do not report security vulnerabilities in public issues** — use [GitHub Security Advisories](https://github.com/yawway365/draftedi-core/security/advisories/new) instead.
 
-Open an issue at https://github.com/yawway365/draftedi-core/issues.
+### Requesting Features
 
-Include:
+Open an issue using the [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) template. For large changes, open a Discussion first to align before investing in implementation.
 
-- Python version
-- `draftedi` version
-- Minimal reproducible example
-- What you expected vs. what happened
+### Submitting Pull Requests
+
+- **Branch naming:** `feat/`, `fix/`, `docs/`, `chore/`, `test/`, `refactor/`
+- **New behavior:** add tests covering the new code paths
+- **Bug fixes:** add a regression test if one does not already exist
+- **Type annotations:** keep `mypy` strict passing; all public functions need complete annotations
+- **Zero runtime dependencies:** do not add packages to `dependencies` in `pyproject.toml`; dev-only tools go under `[dev]` extras only
+- **PR description:** reference the issue it closes (`Closes #N`)
+- Maintainers aim to review within 5 business days
+
+## Commit Message Convention
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+
+Types: feat, fix, docs, chore, test, refactor, ci
+Example: fix(parser): handle empty segment terminator
+```
 
 ## Questions
 
-Open a discussion or issue on GitHub.
+Open a [Discussion in Q&A](https://github.com/yawway365/draftedi-core/discussions/categories/q-a) for usage questions. For private matters, email jacksonyawbiz@gmail.com.

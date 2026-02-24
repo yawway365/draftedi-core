@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-24
+
+### Added
+- `X12SpecProvider` protocol (typing.Protocol) -- BYOS (Bring Your Own Spec) injection interface
+- `MissingSpecError` exception for spec-absent validation scenarios
+- `ElementSpec`, `SegmentSpec`, `RelationalCondition`, `TransactionSetSpec` TypedDicts
+- `X12SpecProvider` and `MissingSpecError` exported from `draftedi` top-level
+
+**Stability note:** X12SpecProvider method signatures and all TypedDict field names
+are frozen from this release.
+
 ## [1.1.0] — 2026-02-22
 
 Initial release of `draftedi` on PyPI.

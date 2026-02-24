@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 from draftedi.spec.protocol import (
     TransactionSetSpec,
@@ -39,9 +39,9 @@ class JSONSkeletonSpecProvider:
 
     def __init__(self, specs_dir: Union[str, Path]) -> None:
         self._dir = Path(specs_dir)
-        self._cache: dict[str, dict] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
 
-    def _load(self, version: str, ts_id: str) -> Optional[dict]:
+    def _load(self, version: str, ts_id: str) -> Optional[dict[str, Any]]:
         """Load and cache the JSON skeleton for (version, ts_id).
 
         Returns None when the file does not exist; callers must handle None
@@ -126,7 +126,7 @@ class JSONSkeletonSpecProvider:
         return sorted(versions)
 
     @staticmethod
-    def _map_segment(segment_id: str, raw: dict) -> SegmentSpec:
+    def _map_segment(segment_id: str, raw: dict[str, Any]) -> SegmentSpec:
         """Map a raw skeleton JSON segment dict to a SegmentSpec TypedDict.
 
         segment_name is always None. element_name is always None. Both omitted
@@ -164,7 +164,7 @@ class JSONSkeletonSpecProvider:
             ],
         )
 
-    def _map_segments(self, raw_segments: dict) -> list[SegmentSpec]:
+    def _map_segments(self, raw_segments: dict[str, Any]) -> list[SegmentSpec]:
         """Map the segments dict from a skeleton JSON file to a SegmentSpec list.
 
         Preserves dict insertion order, which matches the seq field ordering

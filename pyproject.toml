@@ -1,6 +1,6 @@
 [project]
 name = "draftedi"
-version = "1.2.0"
+version = "1.3.0"
 description = "EDI parser and validator for Python. Zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}

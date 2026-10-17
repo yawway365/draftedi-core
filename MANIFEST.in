@@ -1,5 +1,5 @@
-# Ship what is needed to run the test suite from the sdist, plus the docs the
-# shipped files link to.
+# Ship what is needed to run the test suite from the sdist, plus the policy
+# documents CONTRIBUTING.md refers to (CLA, code of conduct).
 include CHANGELOG.md SECURITY.md CONTRIBUTING.md CODE_OF_CONDUCT.md .github/CLA.md
 recursive-include tests *.py *.edi
 recursive-include specs *.md

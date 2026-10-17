@@ -3,7 +3,7 @@
 _SAMPLE_850 follows the §6.2 skeleton JSON format. Temp directories are used
 for isolation; no persistent skeleton files are required.
 JSONSkeletonSpecProvider satisfies X12SpecProvider via structural subtyping;
-no Protocol import is needed in tests to verify duck-typing compliance. (ref: DL-004)
+no Protocol import is needed in tests to verify duck-typing compliance.
 """
 
 from __future__ import annotations

@@ -209,8 +209,8 @@ def _segment_specs(
 class X12Validator:
     """Stateless X12 transaction validator backed by an X12SpecProvider.
 
-    Delegates all check logic to existing validate.py functions; no check
-    logic is duplicated here.
+    Delegates segment-level and element-value checks to validate.py; the
+    mandatory-element check (_check_mandatory_elements) lives here.
 
     Each _check_* method calls _spec_to_hierarchical() independently. The
     conversion overhead is acceptable at per-validate_transaction() granularity;
@@ -275,10 +275,8 @@ class X12Validator:
     def _check_mandatory_segments(
         self, transaction: Mapping[str, Any], spec: TransactionSetSpec
     ) -> list[_validate.ValidationIssue]:
-        # Delegates to validate.check_mandatory_segments. Thin delegation pattern:
-        # wrap-not-rewrite keeps zero regression risk on the 621 LOC check logic.
-        # Spec conversion via _spec_to_hierarchical is the only logic added here.
-        #
+        # Delegates to validate.check_mandatory_segments; the spec conversion via
+        # _spec_to_hierarchical is the only logic added here.
         hierarchical = _spec_to_hierarchical(spec)
         root = _validate.build_nav_tree(hierarchical)
         parsed_segments: list[Any] = transaction.get("segments", [])
@@ -389,7 +387,6 @@ class X12Validator:
         # Delegates to validate.check_relational_conditions. Thin delegation: only
         # added logic is translating RelationalCondition TypedDict keys to the
         # validate.py rc dict format; all condition logic stays in validate.py.
-        #
         issues: list[_validate.ValidationIssue] = []
         for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:

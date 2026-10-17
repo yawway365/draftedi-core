@@ -1,7 +1,7 @@
 """Tests for validate_edi() public API.
 
 Covers: spec-absent path (is_valid=None), spec-present path, parse failure
-(is_valid=False), and top-level __all__ export presence. (ref: DL-003, DL-006)
+(is_valid=False), and top-level __all__ export presence.
 """
 
 from __future__ import annotations

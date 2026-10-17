@@ -596,7 +596,7 @@ def check_element_data_type(
 
     Returns an error message string on failure, or ``None`` on success.
 
-    Bug fixes applied vs. monolith:
+    Rules beyond a plain pattern match:
 
     - DT: calendar-aware date validation (uses ``calendar.monthrange``).
     - N-type: exactly one optional leading minus is allowed.

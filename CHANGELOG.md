@@ -12,6 +12,8 @@ Bug fixes and a security fix. Some validation results change: read **Changed** b
 ### Security
 
 - `JSONSkeletonSpecProvider`: the version and transaction set ID it builds a file path from come from the document being validated (GS08 and ST01). In 1.3.0 a crafted value, such as GS08 `../x` or an absolute path, made the provider read a `.json` file outside the spec directory. Both identifiers are now checked against the X12 formats (version: 1 to 12 letters or digits; transaction set ID: exactly 3), and the resolved path must stay inside the spec directory. Affects 1.3.0, the first release with the provider.
+- `check_element_data_type()`: the R (decimal) check used a regular expression that took quadratic time on long digit runs, so one crafted element value could make validation take seconds (about 5 s for a 40,000-character value). It now runs in linear time. Affects 1.1.0 and 1.3.0.
+- `validate_edi()`: a DT or TM element with non-ASCII digits (such as `²`) raised `ValueError` when a spec provider was supplied, despite the "never raises" promise; a service relying on that promise could be made to fail by one document. Fixed (see Fixed). Affects 1.3.0.
 
 ### Fixed
 
@@ -22,8 +24,8 @@ Bug fixes and a security fix. Some validation results change: read **Changed** b
 - Segment maximum use is counted per loop iteration and per loop path. 1.3.0 reported an 850 with two PO1 iterations, or with a heading N1 loop and a PO1/N1 loop, as exceeding maximum use.
 - `X12Validator` looks up element rules for the loop a segment is in, so a segment ID used in several loops gets the rules of its own loop.
 - `validate_edi()` uses the parser's element positions; in 1.3.0 a repeated element shifted the positions of the elements after it. Composite and repeated elements with data count as present in mandatory and relational checks.
-- `validate_edi()` no longer raises. In 1.3.0 an exception from the spec provider (for example, `json.JSONDecodeError` for a malformed skeleton file) propagated. It now returns `is_valid=None` with a `SPEC_ERROR`; any other unexpected failure returns `is_valid=None` with an `INTERNAL_ERROR`. Findings made before the failure are kept. Only exceptions that do not derive from `Exception`, such as `KeyboardInterrupt`, propagate.
-- `check_element_data_type()`: N, N0 to N9, R, DT and TM accept ASCII digits only and no longer raise on values such as `²`. R accepts `.5`, rejects a trailing newline and is matched in linear time. TM accepts HHMMSSd (tenths of a second) as well as HHMM, HHMMSS and HHMMSSdd.
+- `validate_edi()` no longer raises. In 1.3.0 an exception from the spec provider (for example, `json.JSONDecodeError` for a malformed skeleton file) propagated, and so did a `ValueError` from document content: a DT or TM value with non-ASCII digits (such as `²²²²²²²²`) when a spec was supplied. It now returns `is_valid=None` with a `SPEC_ERROR`; any other unexpected failure returns `is_valid=None` with an `INTERNAL_ERROR`. Findings made before the failure are kept. Only exceptions that do not derive from `Exception`, such as `KeyboardInterrupt`, propagate.
+- `check_element_data_type()`: N, N0 to N9, R, DT and TM accept ASCII digits only and no longer raise on values such as `²`. R accepts `.5` and rejects a trailing newline. TM accepts HHMMSSd (tenths of a second) as well as HHMM, HHMMSS and HHMMSSdd.
 - `JSONSkeletonSpecProvider` expands a leading `~` in `specs_dir`, as the documentation already showed, and returns `None` for a directory named like a spec file.
 - Envelope counts and control numbers are compared after trimming spaces. GS06/GE02 and ISA13/IEA02 are compared by value without `int()` digit limits.
 - Test fixture `tests/fixtures/sample_850.edi`: SE01 corrected from 9 to 8.
@@ -38,7 +40,7 @@ Bug fixes and a security fix. Some validation results change: read **Changed** b
   No built-in check produces a `"warning"` issue any more.
 - `validate_edi()` and `X12Validator` put each finding in `errors` or `warnings` according to its severity, the same way in both. In 1.3.0, `validate_edi()` without a spec provider put envelope findings in `warnings` as strings; they are now `ValidationError` entries in `errors`. `warnings` holds only advisory strings ("No spec_provider supplied...", "No spec found...", "No functional groups found...", "No transactions found..."). `is_valid` stays `None` when no spec is available, so check `errors` as well as `is_valid`.
 - New `error_type` values: `ENVELOPE_ERROR` for envelope findings (`X12Validator` reported them as `MISSING_MANDATORY`), and `SPEC_ERROR` and `INTERNAL_ERROR` from `validate_edi()` (see Fixed).
-- `validate_edi()` checks the whole envelope of the first interchange, functional group and transaction set: ST02/SE02, GS06/GE02 and ISA13/IEA02 control numbers, the SE01, GE01 and IEA01 counts, missing SE, GE and IEA trailers, and counts that are not numeric. 1.3.0 checked SE01 only. `check_envelope()` and `X12Validator` also check ST02/SE02 and a missing SE when the transaction comes from `parse_edi_file()` (it has `raw_se_segment`).
+- `validate_edi()` checks the whole envelope of the first interchange, functional group and transaction set: ST02/SE02, GS06/GE02 and ISA13/IEA02 control numbers, the SE01, GE01 and IEA01 counts, missing SE, GE and IEA trailers, and counts that are not numeric. 1.3.0 checked SE01 only. `check_envelope()` and `X12Validator` also check ST02/SE02, a missing SE and a non-numeric SE01 when the transaction comes from `parse_edi_file()` (it has `raw_se_segment`).
 - Envelope checks run when no spec is available: without a provider, and when the provider has no matching spec. 1.3.0's `X12Validator` skipped them in that case.
 - `X12Validator` and `validate_edi()` report a missing or empty mandatory (M) element as `MISSING_MANDATORY` with `element_pos` set.
 - `validate_edi()` accepts `bytes` as well as `str`. Bytes are decoded as `parse_edi_file()` decodes them (UTF-8, `errors="replace"`).
@@ -46,6 +48,8 @@ Bug fixes and a security fix. Some validation results change: read **Changed** b
 - Packaging: the version is set only in `pyproject.toml` and `draftedi.__version__` reads it from the installed metadata (1.3.0 reported `1.2.0`).
 - Packaging: the `py.typed` marker is included, so type checkers use draftedi's annotations.
 - Packaging: the source distribution includes the test suite (tests, helpers and fixtures), and CI runs the tests from the built sdist.
+- Typing: `check_envelope()` and `X12Validator.validate_transaction()` accept any `Mapping[str, Any]`, so a `parse_edi_file()` `Transaction` passes type checking (it already worked at runtime).
+- Packaging: the license is declared as the SPDX expression `MIT` (`License-Expression` metadata); building the sdist now needs setuptools 77 or newer.
 - Packaging: optional extras are now `test` (pytest and plugins), `lint` (ruff 0.15.22 and mypy 1.20.2, pinned) and `dev` (both). CI and the publish workflow install the pinned `lint` extra.
 - Python 3.13 is tested in CI and listed in the classifiers.
 - Documentation: the README describes the `validate_edi()` result semantics, error types, exceptions and known limitations, and uses absolute links so they work on PyPI. `MissingSpecError` is documented as not raised.
@@ -60,7 +64,7 @@ Listed under "What is not checked" in the README. In short: `validate_edi()` val
 
 **Validator — high-level API**
 
-- `validate_edi(edi_text, spec_provider=None) -> ValidationResult` — top-level convenience function. Envelope check only when called without a spec provider; `is_valid` is `None` (indeterminate), not `False`. Full structural validation when a spec provider is supplied. Never raises. Exported from `draftedi`. *(Note added in 1.3.1: in 1.3.0 an exception raised by the spec provider, for example for a malformed skeleton file, propagated out of `validate_edi()`. Fixed in 1.3.1.)*
+- `validate_edi(edi_text, spec_provider=None) -> ValidationResult` — top-level convenience function. Envelope check only when called without a spec provider; `is_valid` is `None` (indeterminate), not `False`. Full structural validation when a spec provider is supplied. Never raises. Exported from `draftedi`. *(Note added in 1.3.1: in 1.3.0 an exception raised by the spec provider, for example for a malformed skeleton file, propagated out of `validate_edi()`, and so did a `ValueError` for a DT or TM value with non-ASCII digits. Fixed in 1.3.1.)*
 - `X12Validator(spec_provider)` — class that wraps the existing `validate.py` check functions. Accepts any object satisfying the `X12SpecProvider` Protocol via structural subtyping; no inheritance required. Method: `validate_transaction(parsed_transaction, version) -> ValidationResult`. Exported from `draftedi` and `draftedi.validator`.
 - `JSONSkeletonSpecProvider(directory)` — BYOS spec provider that loads structural-only JSON skeleton files from a local directory. File naming convention: `{version}-{tsid}.json` (e.g., `005010-850.json`). Returns `None` on missing file rather than raising. Caches loaded specs per instance. Satisfies `X12SpecProvider` via structural subtyping; no explicit inheritance. `element_name` and `segment_name` fields are `None` (ASC X12 copyright). Exported from `draftedi.spec`.
 

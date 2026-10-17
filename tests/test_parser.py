@@ -213,7 +213,7 @@ class TestParseEdiFileStructure:
         """Regression for F-027: each ^ repetition yields a separate Element dict.
 
         Asserts 3-repetition REF element produces 3 distinct dicts with correct
-        value_text and repetition_index. (ref: DL-002)
+        value_text and repetition_index.
         """
         txn = "ST*850*0001~REF*PO*FIRST^SECOND^THIRD~SE*3*0001~"
         group = SampleX12.build_group(transactions=[txn])

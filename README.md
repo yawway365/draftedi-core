@@ -136,7 +136,7 @@ The other functions can raise:
 | `parse_edi_file()` | `ValueError` when the input is not X12: it does not start with `ISA` (including input that starts with a UTF-8 byte order mark), the ISA header is shorter than 106 characters, `GS` comes before `ISA`, `ST` before `GS`, or `SE` appears outside a transaction set. Also `ValueError` when SE01 has more than 4,300 digits (Python's limit on converting strings to `int`). |
 | `parse_interchange()` | `ValueError` when the text does not start with `ISA` or is shorter than 106 characters. |
 | `X12Validator.validate_transaction()` | Any exception the spec provider raises; `KeyError` for a malformed transaction dict, such as a segment without `segment_id`. |
-| `JSONSkeletonSpecProvider` methods | `json.JSONDecodeError`, `UnicodeDecodeError` or `OSError` for a spec file that cannot be read or parsed; `KeyError` or `TypeError` for a skeleton missing required fields. |
+| `JSONSkeletonSpecProvider` methods | `json.JSONDecodeError`, `UnicodeDecodeError` or `OSError` for a spec file that cannot be read or parsed; `KeyError`, `TypeError` or `AttributeError` for a skeleton missing required fields or with the wrong structure. |
 
 ## Error types
 
@@ -341,13 +341,13 @@ Signatures are as in the source. `X12SpecProvider` is shown above.
 ### Validation (`draftedi`)
 
 - `validate_edi(edi_text: Union[str, bytes], spec_provider: Optional[X12SpecProvider] = None) -> ValidationResult`: see [Validate](#validate).
-- `X12Validator(spec_provider: X12SpecProvider)`, with `validate_transaction(parsed_transaction: dict[str, Any], version: str) -> ValidationResult`. Also in `draftedi.validator`.
+- `X12Validator(spec_provider: X12SpecProvider)`, with `validate_transaction(parsed_transaction: Mapping[str, Any], version: str) -> ValidationResult`. Also in `draftedi.validator`.
 - `JSONSkeletonSpecProvider(specs_dir: Union[str, Path])`: import from `draftedi.spec`.
 - `MissingSpecError`: a `ValueError` subclass exported for API compatibility. No draftedi function raises it.
 
 ### Check functions (`draftedi`, `draftedi.validate`)
 
-- `check_envelope(transaction: dict[str, Any], parsed_segments: list[Any]) -> list[ValidationIssue]`: compares SE01 with `len(parsed_segments) + 2`. When `transaction` has `raw_se_segment` (as `parse_edi_file()` output does), also reports an SE02 that differs from ST02, a missing SE and a non-numeric SE01.
+- `check_envelope(transaction: Mapping[str, Any], parsed_segments: list[Any]) -> list[ValidationIssue]`: compares SE01 with `len(parsed_segments) + 2`. When `transaction` has `raw_se_segment` (as `parse_edi_file()` output does), also reports an SE02 that differs from ST02, a missing SE and a non-numeric SE01.
 - `check_element_data_type(value: str, element_type: str, element_id: str) -> Optional[str]`: checks N and N0 to N9 (ASCII digits, optional leading minus), R (decimal), DT (CCYYMMDD or YYMMDD, calendar-aware) and TM (HHMM, HHMMSS, HHMMSSd or HHMMSSdd). Returns an error message, or `None` when the value is valid, empty, or of another type.
 - `check_element_length(value: str, min_length: int | str, max_length: int | str) -> Optional[str]`: returns an error message, or `None`. An empty value passes; a `max_length` of 0 means no maximum.
 - `check_relational_conditions(seg_id: str, rc_list: list[dict[str, Any]], val_by_pos: dict[int, str]) -> list[ValidationIssue]`: checks P (paired), R (required), E (exclusion), C (conditional) and L (list conditional) conditions for one segment.

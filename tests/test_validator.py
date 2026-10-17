@@ -1,7 +1,7 @@
 """Tests for X12Validator, ValidationResult, and ValidationError.
 
 MinimalProvider implements X12SpecProvider via structural subtyping to verify
-duck-typing compliance without importing the Protocol class. (ref: DL-004)
+duck-typing compliance without importing the Protocol class.
 """
 
 from __future__ import annotations

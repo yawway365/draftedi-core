@@ -246,11 +246,13 @@ def parse_edi_file(raw_bytes: bytes, source: str = "manual upload") -> ParsedFil
     repetition_sep = sep["repetition_sep"]
     component_sep = sep["component_sep"]
 
-    # Split into segments; trim whitespace/newlines around each segment.  ISA segments
-    # are only left-trimmed: ISA16 may be a control character (e.g. US 0x1F) that
-    # rstrip() would remove.
+    # Split into segments; trim whitespace/newlines around each segment.  An ISA is only
+    # right-trimmed after its fixed 105-character body: ISA16 (index 104) may be a control
+    # character (e.g. US 0x1F) that rstrip() would remove.
     raw_segments = [s.lstrip() for s in x12_text.split(segment_term)]
-    segments = [s if s.startswith("ISA") else s.rstrip() for s in raw_segments if s]
+    segments = [
+        s[:105] + s[105:].rstrip() if s.startswith("ISA") else s.rstrip() for s in raw_segments if s
+    ]
 
     interchanges: list[Interchange] = []
 

@@ -333,8 +333,9 @@ def _build_interchange(isa11: str, isa12: str, txn: str, isa16: str = ">") -> st
     return _isa(isa11, isa12, isa16) + group + "IEA*1*000000001~"
 
 
-# X12 allows control characters as delimiters (RS, US, FS, GS, VT, FF, HT, CR, LF, NEL,
-# NBSP); str.isspace() is true for all of them.
+# str.isspace() is true for all of these, which an isspace()-based blank check wrongly
+# rejected.  RS, US, FS and GS are valid X12 delimiters; VT, FF, HT, CR, LF, NEL and NBSP
+# check that only a literal space counts as blank.
 CONTROL_DELIMITERS = list("\x1e\x1f\x1c\x1d\x0b\x0c\t\r\n\x85\xa0")
 
 
@@ -509,6 +510,19 @@ class TestComponentSeparatorPerInterchange:
         ic1, ic2 = parse_edi_file(to_bytes(first + second))["interchanges"]
         assert ic1["component_sep"] == ">"
         assert ic2["component_sep"] == "\x1f"
+        sv101 = ic2["groups"][0]["transactions"][0]["segments"][0]["elements"][0]
+        assert [c["value_text"] for c in sv101["components"]] == ["HC", "99213"]
+
+    @pytest.mark.parametrize("isa16", [">", "\x1f"], ids=repr)
+    def test_crlf_interchange_after_lf_interchange(self, isa16: str) -> None:
+        """With LF as segment terminator, a CRLF interchange's '\\r' is trimmed, not ISA16."""
+        txn = f"ST*837*0001~SV1*HC{isa16}99213*50~SE*3*0001~"
+        first = _build_interchange("^", "00501", txn.replace(isa16, ">")).replace("~", "\n")
+        second = _build_interchange("^", "00501", txn, isa16=isa16).replace("~", "\r\n")
+        ic1, ic2 = parse_edi_file(to_bytes(first + second))["interchanges"]
+        assert ic1["raw_isa"].endswith("*T*>")
+        assert ic2["raw_isa"].endswith(f"*T*{isa16}")
+        assert ic2["component_sep"] == isa16
         sv101 = ic2["groups"][0]["transactions"][0]["segments"][0]["elements"][0]
         assert [c["value_text"] for c in sv101["components"]] == ["HC", "99213"]
 

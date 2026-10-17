@@ -384,3 +384,14 @@ class TestValidateEdiNeverRaises:
         assert result.errors[1].message == (
             "Spec provider _RaisingProvider failed: RuntimeError: backend down"
         )
+
+    def test_gs08_path_traversal_finds_no_spec(self, tmp_path: Path) -> None:
+        """Audit item 6: GS08 '../x' must not load a skeleton outside specs_dir."""
+        from draftedi.spec.json_skeleton_provider import JSONSkeletonSpecProvider
+
+        specs = tmp_path / "specs"
+        specs.mkdir()
+        (tmp_path / "x-850.json").write_text(json.dumps(_SKELETON_850), encoding="utf-8")
+        result = validate_edi(_edi(version="../x"), spec_provider=JSONSkeletonSpecProvider(specs))
+        assert result.is_valid is None
+        assert any("No spec found for version='../x'" in w for w in result.warnings)

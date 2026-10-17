@@ -183,3 +183,82 @@ class TestJSONSkeletonSpecProvider:
         from draftedi.spec import JSONSkeletonSpecProvider as JSP
 
         assert JSP is not None
+
+
+# ---------------------------------------------------------------------------
+# TestPathTraversal — version/ts_id come from GS08/ST01 in untrusted documents
+# ---------------------------------------------------------------------------
+
+
+class TestPathTraversal:
+    @staticmethod
+    def _layout(tmp_path: Path) -> Path:
+        """specs/ holds a valid skeleton; a decoy x-850.json sits one level up."""
+        specs = tmp_path / "specs"
+        specs.mkdir()
+        _write_spec(specs, "005010", "850", _SAMPLE_850)
+        _write_spec(tmp_path, "x", "850", _SAMPLE_850)
+        return specs
+
+    def test_rejected_versions_return_none(self, tmp_path: Path) -> None:
+        specs = self._layout(tmp_path)
+        provider = JSONSkeletonSpecProvider(specs)
+        for version in [
+            "../x",
+            "..\\x",
+            str(tmp_path / "x"),
+            "005010/../../x",
+            "005010\x00",
+            "005010\n",
+            "",
+            "0050100000000",  # 13 chars: GS08 is at most 12
+            None,
+        ]:
+            assert provider.get_transaction_set(version, "850") is None, version  # type: ignore[arg-type]
+            assert provider.get_segment_spec(version, "BEG") is None, version  # type: ignore[arg-type]
+        assert provider._cache == {}
+
+    def test_rejected_ts_ids_return_none(self, tmp_path: Path) -> None:
+        specs = self._layout(tmp_path)
+        (specs / "005010-85.json").write_text(json.dumps(_SAMPLE_850), encoding="utf-8")
+        provider = JSONSkeletonSpecProvider(specs)
+        for ts_id in ["../850", "850/..", "85", "8500", "8.0", "850\x00", None]:
+            assert provider.get_transaction_set("005010", ts_id) is None, ts_id  # type: ignore[arg-type]
+        assert provider._cache == {}
+
+    def test_valid_identifiers_still_load(self, tmp_path: Path) -> None:
+        specs = self._layout(tmp_path)
+        _write_spec(specs, "005010X222A1", "837", _SAMPLE_850)
+        provider = JSONSkeletonSpecProvider(specs)
+        assert provider.get_transaction_set("005010", "850") is not None
+        assert provider.get_transaction_set("005010X222A1", "837") is not None
+
+    def test_spec_path_stays_inside_specs_dir(self, tmp_path: Path) -> None:
+        """Defence in depth: the path check holds even if the identifier check were bypassed."""
+        specs = self._layout(tmp_path)
+        provider = JSONSkeletonSpecProvider(specs)
+        assert provider._spec_path("../x-850") is None
+        assert provider._spec_path(str(tmp_path / "x-850")) is None
+        assert provider._spec_path("005010-850") == (specs / "005010-850.json").absolute()
+
+    def test_directory_named_like_spec_returns_none(self, tmp_path: Path) -> None:
+        (tmp_path / "005010-850.json").mkdir()
+        provider = JSONSkeletonSpecProvider(tmp_path)
+        assert provider.get_transaction_set("005010", "850") is None
+
+    def test_get_segment_spec_uses_cache(self, tmp_path: Path) -> None:
+        _write_spec(tmp_path, "005010", "850", _SAMPLE_850)
+        provider = JSONSkeletonSpecProvider(tmp_path)
+        provider.get_transaction_set("005010", "850")
+        (tmp_path / "005010-850.json").unlink()
+        seg = provider.get_segment_spec("005010", "BEG")
+        assert seg is not None
+        assert seg["requirement"] == "M"
+
+    def test_get_segment_spec_scans_uncached_files(self, tmp_path: Path) -> None:
+        _write_spec(tmp_path, "005010", "850", _SAMPLE_850)
+        provider = JSONSkeletonSpecProvider(tmp_path)
+        seg = provider.get_segment_spec("005010", "PO1")
+        assert seg is not None
+        assert seg["loop_id"] == "PO1"
+        assert "005010-850" in provider._cache

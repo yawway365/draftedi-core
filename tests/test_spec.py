@@ -1,7 +1,7 @@
 """Smoke tests for draftedi.spec -- Protocol, TypedDicts, and exceptions.
 
 test_protocol_duck_typing_conformance verifies structural subtyping at runtime
-behavior only; type correctness is enforced by mypy, not isinstance(). (ref: DL-001, DL-002)
+behavior only; type correctness is enforced by mypy, not isinstance().
 """
 
 

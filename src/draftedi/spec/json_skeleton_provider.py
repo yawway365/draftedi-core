@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 from typing import Optional, Union, Any
 
@@ -13,56 +15,87 @@ from draftedi.spec.protocol import (
     RelationalCondition,
 )
 
+# version and ts_id come from document content (GS08, ST01) and become part of a
+# file path, so only the X12 formats are accepted: GS08 is 1-12 alphanumerics
+# (e.g. "005010", "005010X222A1") and ST01 is exactly three (e.g. "850"). This
+# rules out separators, "..", drive letters and NUL bytes.
+_VERSION_RE = re.compile(r"[A-Za-z0-9]{1,12}")
+_TS_ID_RE = re.compile(r"[A-Za-z0-9]{3}")
+
+
+def _is_valid_version(version: str) -> bool:
+    return isinstance(version, str) and _VERSION_RE.fullmatch(version) is not None
+
+
+def _is_valid_ts_id(ts_id: str) -> bool:
+    return isinstance(ts_id, str) and _TS_ID_RE.fullmatch(ts_id) is not None
+
 
 class JSONSkeletonSpecProvider:
     """X12SpecProvider backed by skeleton JSON files.
 
     Satisfies X12SpecProvider via structural subtyping (duck typing). No explicit
     inheritance from X12SpecProvider is used; this avoids coupling draftedi-core's
-    public implementations to the Protocol class. (ref: DL-004)
+    public implementations to the Protocol class.
 
     Skeleton files contain structural facts only: types, lengths, requirements, loop
     structure, relational conditions. element_name and segment_name are always None
     because ASC X12 descriptive names are copyrighted and intentionally excluded from
-    open-source distribution. (ref: DL-004)
+    open-source distribution.
 
     Caching: per-instance dict avoids lru_cache memory leak on instance methods.
     Cache is populated on first access and never invalidated. Spec files are treated
     as static artifacts; users who modify JSON files after construction must create a
-    new provider instance. (ref: R-003)
+    new provider instance.
 
     Parameters
     ----------
     specs_dir : str or Path
         Directory containing skeleton JSON files named {version}-{tsid}.json.
+        A leading "~" is expanded to the user's home directory.
     """
 
     def __init__(self, specs_dir: Union[str, Path]) -> None:
-        self._dir = Path(specs_dir)
+        self._dir = Path(specs_dir).expanduser()
         self._cache: dict[str, dict[str, Any]] = {}
 
     def _load(self, version: str, ts_id: str) -> Optional[dict[str, Any]]:
         """Load and cache the JSON skeleton for (version, ts_id).
 
-        Returns None when the file does not exist; callers must handle None
-        rather than catching FileNotFoundError. Cache key is "{version}-{ts_id}".
-        Once cached, the dict is returned directly on subsequent calls without
-        re-reading disk. (ref: R-003)
+        Returns None when the file does not exist or when version/ts_id are not
+        valid X12 identifiers; callers must handle None rather than catching
+        FileNotFoundError. Cache key is "{version}-{ts_id}". Once cached, the dict
+        is returned directly on subsequent calls without re-reading disk.
         """
+        if not (_is_valid_version(version) and _is_valid_ts_id(ts_id)):
+            return None
         key = f"{version}-{ts_id}"
         if key not in self._cache:
-            path = self._dir / f"{key}.json"
-            if not path.exists():
+            path = self._spec_path(key)
+            if path is None or not path.is_file():
                 return None
             with open(path, encoding="utf-8") as f:
                 self._cache[key] = json.load(f)
         return self._cache[key]
 
+    def _spec_path(self, key: str) -> Optional[Path]:
+        """Return specs_dir/{key}.json, or None if it would fall outside specs_dir.
+
+        Defence in depth behind the identifier checks in _load(). The comparison
+        is lexical (abspath normalises ".."), so symlinks placed inside specs_dir
+        by its owner keep working.
+        """
+        base = os.path.abspath(self._dir)
+        path = os.path.abspath(os.path.join(base, f"{key}.json"))
+        if os.path.dirname(path) != base:
+            return None
+        return Path(path)
+
     def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
         """Return the TransactionSetSpec for (version, ts_id), or None if not found.
 
         Loads and caches the skeleton JSON. transaction_set_name is None because
-        copyrighted ASC X12 descriptive names are excluded from skeleton files. (ref: DL-004)
+        copyrighted ASC X12 descriptive names are excluded from skeleton files.
         """
         spec = self._load(version, ts_id)
         if not spec:
@@ -77,10 +110,11 @@ class JSONSkeletonSpecProvider:
     def get_element_codes(self, version: str, element_id: str) -> list[str]:
         """Return allowed code values for element_id within the given version.
 
-        Searches only already-cached transaction sets for the version prefix.
-        Returns an empty list when no codes are found or when includes_codes is
-        false in the skeleton. Callers that need all codes for a version should
-        call get_transaction_set() first to populate the cache. (ref: DL-004)
+        Searches only already-cached transaction sets for the version prefix and
+        returns the first non-empty codes list found for element_id, or an empty
+        list. The skeleton's _meta.includes_codes is not read. Callers that need
+        all codes for a version should call get_transaction_set() first to
+        populate the cache.
         """
         for key, spec in self._cache.items():
             if key.startswith(version + "-"):
@@ -96,8 +130,9 @@ class JSONSkeletonSpecProvider:
         Searches cached transaction sets first; if not found, scans the specs_dir
         for all {version}-*.json files and loads them to populate the cache before
         retrying. segment_name is None for the same reason as transaction_set_name.
-        (ref: DL-004)
         """
+        if not _is_valid_version(version):
+            return None
         for key, spec in self._cache.items():
             if key.startswith(version + "-"):
                 seg = spec["segments"].get(segment_id)
@@ -116,7 +151,7 @@ class JSONSkeletonSpecProvider:
         """Return sorted list of X12 version strings present in specs_dir.
 
         Extracts the version prefix (first hyphen-delimited token) from each
-        *.json filename. Does not load or validate file contents. (ref: DL-004)
+        *.json filename. Does not load or validate file contents.
         """
         versions: set[str] = set()
         for f in self._dir.glob("*.json"):
@@ -130,7 +165,7 @@ class JSONSkeletonSpecProvider:
         """Map a raw skeleton JSON segment dict to a SegmentSpec TypedDict.
 
         segment_name is always None. element_name is always None. Both omitted
-        to exclude copyrighted ASC X12 descriptive text. (ref: DL-004)
+        to exclude copyrighted ASC X12 descriptive text.
         """
         return SegmentSpec(
             segment_id=segment_id,
@@ -167,7 +202,6 @@ class JSONSkeletonSpecProvider:
     def _map_segments(self, raw_segments: dict[str, Any]) -> list[SegmentSpec]:
         """Map the segments dict from a skeleton JSON file to a SegmentSpec list.
 
-        Preserves dict insertion order, which matches the seq field ordering
-        in well-formed skeleton files generated by build_skeleton.py.
+        Preserves dict insertion order; the seq field is not used for ordering.
         """
         return [self._map_segment(seg_id, seg) for seg_id, seg in raw_segments.items()]

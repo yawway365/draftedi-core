@@ -2,9 +2,10 @@
 
 Exports all Protocol and TypedDict symbols for provider implementors.
 X12SpecProvider and MissingSpecError are re-exported at draftedi top-level
-for consumer imports; TypedDicts remain at draftedi.spec only. (ref: DL-004)
-JSONSkeletonSpecProvider is exported here and at draftedi top-level as the
-built-in BYOS spec provider; users may also implement X12SpecProvider directly.
+for consumer imports; TypedDicts remain at draftedi.spec only.
+JSONSkeletonSpecProvider, the built-in BYOS spec provider, is exported here
+only (not at draftedi top-level); users may also implement X12SpecProvider
+directly.
 """
 
 from __future__ import annotations

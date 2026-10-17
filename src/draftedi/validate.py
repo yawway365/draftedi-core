@@ -496,6 +496,9 @@ def check_segment_max_use(
     restart whenever the loop's trigger (first) segment begins a new iteration,
     the same rule ``assign_loop_paths`` uses. Segments outside any loop are
     counted across the whole transaction.
+
+    Findings have severity ``"error"`` (X12 997 AK3 code 5, segment exceeds
+    maximum use).
     """
     issues: list[ValidationIssue] = []
 
@@ -528,7 +531,7 @@ def check_segment_max_use(
             loop_label = f" in loop {lid_mu}" if lid_mu else ""
             issues.append(
                 make_issue(
-                    "warning",
+                    "error",
                     "segment_max_use",
                     seg_id_mu,
                     None,
@@ -693,6 +696,9 @@ def check_relational_conditions(
 
     - ``transaction_set_segment_rc_type``: P/R/E/C/L
     - ``transaction_set_segment_rc_elements``: list of element position strings
+
+    Every violation has severity ``"error"`` (X12 997 AK4 code 2, conditional
+    required data element missing, or code 10, exclusion condition violated).
     """
     issues: list[ValidationIssue] = []
 
@@ -732,7 +738,7 @@ def check_relational_conditions(
             if not present_positions:
                 issues.append(
                     make_issue(
-                        "warning",
+                        "error",
                         "relational_condition",
                         seg_id,
                         None,
@@ -749,7 +755,7 @@ def check_relational_conditions(
                 filled = ",".join(f"{seg_id}{p:02d}" for p in present_positions)
                 issues.append(
                     make_issue(
-                        "warning",
+                        "error",
                         "relational_condition",
                         seg_id,
                         None,
@@ -787,7 +793,7 @@ def check_relational_conditions(
                     rest_label = ",".join(f"{seg_id}{p:02d}" for p in rest)
                     issues.append(
                         make_issue(
-                            "warning",
+                            "error",
                             "relational_condition",
                             seg_id,
                             None,

@@ -237,10 +237,10 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_required_none_present_warns(self):
+    def test_required_none_present_errors(self):
         issues = check_relational_conditions("N1", [_make_rc("R", [1, 2])], {1: "", 2: ""})
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "Required" in issues[0]["message"]
 
     # Exclusion (E)
@@ -250,10 +250,10 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_exclusion_multiple_present_warns(self):
+    def test_exclusion_multiple_present_errors(self):
         issues = check_relational_conditions("N1", [_make_rc("E", [1, 2])], {1: "X", 2: "Y"})
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "Exclusion" in issues[0]["message"]
 
     # Conditional (C)
@@ -282,12 +282,12 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_list_first_present_no_rest_warns(self):
+    def test_list_first_present_no_rest_errors(self):
         issues = check_relational_conditions(
             "N1", [_make_rc("L", [1, 2, 3])], {1: "A", 2: "", 3: ""}
         )
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "List conditional" in issues[0]["message"]
 
     # Edge cases
@@ -649,12 +649,12 @@ class TestCheckSegmentMaxUse:
         issues = check_segment_max_use(assignments, spec)
         assert len(issues) == 0
 
-    def test_exceeded_warns(self):
+    def test_exceeded_errors(self):
         spec = [make_spec_segment("BEG", max_use=1)]
         assignments = [(make_segment("BEG", i), None) for i in range(1, 4)]
         issues = check_segment_max_use(assignments, spec)
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "3 time(s)" in issues[0]["message"]
         assert "max use is 1" in issues[0]["message"]
 
@@ -706,7 +706,7 @@ class TestCheckSegmentMaxUsePerIteration:
         """Two PO1 iterations no longer count as two uses of PO1 (audit item 1)."""
         assert self._issues(["BEG", "PO1", "PID", "PID", "PO1", "PID", "PID", "CTT"]) == []
 
-    def test_excess_within_one_iteration_warns(self):
+    def test_excess_within_one_iteration_reported(self):
         issues = self._issues(["BEG", "PO1", "PID", "PID", "PID", "PO1", "PID", "CTT"])
         assert len(issues) == 1
         assert issues[0]["message"] == (
@@ -721,7 +721,7 @@ class TestCheckSegmentMaxUsePerIteration:
         seg_ids = ["BEG", "PO1", "N1", "N3", "N1", "N3", "PO1", "N1", "N3"]
         assert self._issues(seg_ids) == []
 
-    def test_nested_loop_excess_warns(self):
+    def test_nested_loop_excess_reported(self):
         issues = self._issues(["BEG", "PO1", "N1", "N3", "N3", "PO1", "N1", "N3"])
         assert len(issues) == 1
         assert "Segment N3 appears 2 time(s) but max use is 1 in loop N1" in issues[0]["message"]
@@ -904,7 +904,7 @@ class TestEnvelopeAdversarial:
         assert len(issues) == 1
         assert "999999999" in issues[0]["message"]
 
-    def test_string_segment_count_warns(self):
+    def test_string_segment_count_reported(self):
         """String segment_count_reported (type mismatch) is reported."""
         tx = {"segment_count_reported": "12"}
         parsed = [make_segment("BEG", 1)] * 10

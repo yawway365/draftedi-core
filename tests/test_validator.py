@@ -292,14 +292,20 @@ class TestX12ValidatorMaxUsePerIteration:
         assert result.errors == []
         assert result.warnings == []
 
-    def test_excess_within_iteration_is_warning(self):
-        """Max-use issues have severity 'warning': reported in warnings, is_valid unaffected."""
+    def test_excess_within_iteration_is_error(self):
+        """Max-use issues are errors (X12 997 AK3 code 5) and make is_valid False."""
         result = X12Validator(_SpecProvider(_po1_loop_spec())).validate_transaction(
             _tx(_seg("BEG"), _seg("PO1"), _seg("PID"), _seg("PID")), "005010"
         )
-        assert result.is_valid is True
-        assert result.errors == []
-        assert result.warnings == ["Segment PID appears 2 time(s) but max use is 1 in loop PO1"]
+        assert result.is_valid is False
+        assert result.warnings == []
+        assert [(e.segment_id, e.error_type, e.message) for e in result.errors] == [
+            (
+                "PID",
+                "MAX_USE_EXCEEDED",
+                "Segment PID appears 2 time(s) but max use is 1 in loop PO1",
+            )
+        ]
 
 
 class TestX12ValidatorEnvelope:
@@ -463,14 +469,28 @@ class TestX12ValidatorRelationalSeverity:
         assert result.is_valid is False
         assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
 
-    def test_required_violation_is_warning(self):
+    def test_required_violation_is_error(self):
         result = X12Validator(self._provider("R")).validate_transaction(
             _tx(_seg("N1", "BY")), "005010"
         )
-        assert result.is_valid is True
-        assert result.errors == []
-        assert len(result.warnings) == 1
-        assert "Required condition" in result.warnings[0]
+        assert result.is_valid is False
+        assert result.warnings == []
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+        assert "Required condition" in result.errors[0].message
+
+    def test_exclusion_violation_is_error(self):
+        result = X12Validator(self._provider("E")).validate_transaction(
+            _tx(_seg("N1", "BY", "Name", "92")), "005010"
+        )
+        assert result.is_valid is False
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+
+    def test_list_conditional_violation_is_error(self):
+        result = X12Validator(self._provider("L")).validate_transaction(
+            _tx(_seg("N1", "BY", "Name")), "005010"
+        )
+        assert result.is_valid is False
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
 
     def test_composite_counts_as_present(self):
         composite = {

@@ -339,11 +339,14 @@ class TestValidateEdiElements:
         result = validate_edi(_edi(body), spec_provider=_provider(tmp_path))
         assert result.is_valid is True, result.errors
 
-    def test_max_use_exceeded_is_warning(self, tmp_path: Path) -> None:
+    def test_max_use_exceeded_is_error(self, tmp_path: Path) -> None:
         body = _PO_BODY + ["CTT*2"]
         result = validate_edi(_edi(body), spec_provider=_provider(tmp_path))
-        assert result.is_valid is True
-        assert result.warnings == ["Segment CTT appears 2 time(s) but max use is 1"]
+        assert result.is_valid is False
+        assert result.warnings == []
+        assert [(e.error_type, e.message) for e in result.errors] == [
+            ("MAX_USE_EXCEEDED", "Segment CTT appears 2 time(s) but max use is 1")
+        ]
 
 
 class TestValidateEdiNeverRaises:

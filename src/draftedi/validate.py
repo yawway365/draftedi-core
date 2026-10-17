@@ -395,7 +395,9 @@ def _check_trailer(
 
     control = trailer[1] if len(trailer) > 1 else None
     trimmed = control.strip() if control is not None else None
-    header_trimmed = header_control.strip() if header_control is not None else None
+    # Trailer elements are split from text; the header value may come from a
+    # hand-built transaction dict (e.g. an int control_number).
+    header_trimmed = str(header_control).strip() if header_control is not None else None
     if (
         numeric_control
         and trimmed

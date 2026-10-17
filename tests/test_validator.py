@@ -336,6 +336,19 @@ class TestX12ValidatorEnvelope:
         assert result.errors[0].error_type == "ENVELOPE_ERROR"
 
 
+class TestX12ValidatorNonStrControlNumber:
+    def test_int_control_number_does_not_raise(self):
+        tx = {
+            "transaction_set_id": "850",
+            "control_number": 1,
+            "raw_se_segment": "SE*2*1",
+            "segments": [],
+        }
+        result = X12Validator(MinimalProvider()).validate_transaction(tx, "005010")
+        assert result.is_valid is None
+        assert result.errors == []
+
+
 class TestX12ValidatorMandatoryElements:
     @staticmethod
     def _provider() -> _SpecProvider:

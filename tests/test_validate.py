@@ -427,6 +427,15 @@ class TestCheckEnvelopeRawSE:
     def test_padded_count_compared_trimmed(self):
         assert check_envelope(self._tx("SE*3 *0001"), [make_segment("BEG", 1)]) == []
 
+    def test_non_str_control_number_compared_as_text(self):
+        """A hand-built dict may carry an int control_number; it must not raise."""
+        tx = {"control_number": 1, "raw_se_segment": "SE*2*1"}
+        assert check_envelope(tx, []) == []
+        tx = {"control_number": 2, "raw_se_segment": "SE*2*1"}
+        assert [i["message"] for i in check_envelope(tx, [])] == [
+            "SE02 control number '1' does not match ST02 2"
+        ]
+
     def test_separator_read_from_segment(self):
         """The element separator is whatever follows the segment ID."""
         assert check_envelope(self._tx("SE|2|0001"), []) == []

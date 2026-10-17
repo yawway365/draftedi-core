@@ -22,4 +22,4 @@ assignees: ''
      List observable, testable outcomes. -->
 
 ## Additional Context
-<!-- EDI standards affected (X12, EDIFACT, etc.), related specs, transaction sets, prior art, links. -->
+<!-- X12 versions and transaction sets affected (draftedi supports X12 only), related specs, prior art, links. -->

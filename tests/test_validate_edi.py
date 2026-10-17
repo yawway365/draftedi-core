@@ -276,6 +276,12 @@ class TestValidateEdiEnvelope:
                 ("ENVELOPE_ERROR", message)
             ]
 
+    def test_padded_header_control_numbers_match(self) -> None:
+        """ST02 and GS06 keep trailing padding when another element follows them."""
+        text = _edi().replace("ST*850*0001~", "ST*850*0001 *X~")
+        text = text.replace("*1200*1*X*", "*1200*1 *X*")
+        assert validate_edi(text).errors == []
+
     def test_group_control_number_compared_by_value(self) -> None:
         """GS06/GE02 are numeric (N0): '1' and '000000001' agree."""
         assert validate_edi(_edi(ge02="000000001")).errors == []

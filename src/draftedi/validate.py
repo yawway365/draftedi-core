@@ -350,6 +350,10 @@ def _check_trailer(
     ``header_control`` (named ``header_ref`` in messages, e.g. ``"GS06"``).
     GS06/GE02 and ISA13/IEA02 are numeric (N0), so ``numeric_control`` compares
     them by value; ST02/SE02 are AN and compare as text.
+
+    Values are compared trimmed: ``parse_edi_file`` trims whole segments, so
+    padding survives in an element that is not last (ST02 ``"0001 "``) but not
+    in the trailer's last element (SE02 ``"0001"``).
     """
     if trailer is None:
         return [
@@ -364,7 +368,7 @@ def _check_trailer(
         ]
 
     issues: list[ValidationIssue] = []
-    count = trailer[0] if trailer else ""
+    count = trailer[0].strip() if trailer else ""
     if not _is_ascii_digits(count):
         issues.append(
             make_issue(
@@ -390,16 +394,18 @@ def _check_trailer(
         )
 
     control = trailer[1] if len(trailer) > 1 else None
+    trimmed = control.strip() if control is not None else None
+    header_trimmed = header_control.strip() if header_control is not None else None
     if (
         numeric_control
-        and control
-        and header_control
-        and _is_ascii_digits(control)
-        and _is_ascii_digits(header_control)
+        and trimmed
+        and header_trimmed
+        and _is_ascii_digits(trimmed)
+        and _is_ascii_digits(header_trimmed)
     ):
-        matches = _canonical_digits(control) == _canonical_digits(header_control)
+        matches = _canonical_digits(trimmed) == _canonical_digits(header_trimmed)
     else:
-        matches = control == header_control
+        matches = trimmed == header_trimmed
     if not matches:
         issues.append(
             make_issue(

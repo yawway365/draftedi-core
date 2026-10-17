@@ -384,6 +384,15 @@ class TestCheckEnvelopeRawSE:
         issues = check_envelope(self._tx("SE*" + "9" * 5000 + "*0001"), [])
         assert [i["element_pos"] for i in issues] == [1]
 
+    def test_padded_control_numbers_compared_trimmed(self):
+        """The parser keeps ST02 "0001 " when ST03 follows, but trims SE02."""
+        assert (
+            check_envelope(self._tx("SE*3*0001", control="0001 "), [make_segment("BEG", 1)]) == []
+        )
+
+    def test_padded_count_compared_trimmed(self):
+        assert check_envelope(self._tx("SE*3 *0001"), [make_segment("BEG", 1)]) == []
+
     def test_separator_read_from_segment(self):
         """The element separator is whatever follows the segment ID."""
         assert check_envelope(self._tx("SE|2|0001"), []) == []
@@ -402,6 +411,9 @@ class TestCheckTrailer:
     def test_numeric_control_non_digits_compare_as_text(self):
         issues = _check_trailer("GE", ["1", "A"], 1, "transaction sets", "GS06", "1", True)
         assert len(issues) == 1
+
+    def test_padded_numeric_control_compared_trimmed(self):
+        assert _check_trailer("GE", ["1", "1"], 1, "transaction sets", "GS06", "1 ", True) == []
 
     def test_missing_control_number(self):
         issues = _check_trailer("IEA", ["1"], 1, "functional groups", "ISA13", "000000001", True)

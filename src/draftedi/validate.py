@@ -374,21 +374,34 @@ def check_segment_max_use(
     loop_assignments: list[tuple[dict[str, Any], Optional[str]]],
     spec_segments: list[Any],
 ) -> list[ValidationIssue]:
-    """Count occurrences of each segment per loop and compare to segment_maximum_use."""
+    """Count occurrences of each segment per loop iteration and compare to segment_maximum_use.
+
+    A segment's maximum use applies within one iteration of its loop, so counts
+    restart whenever the loop's trigger (first) segment begins a new iteration,
+    the same rule ``assign_loop_paths`` uses. Segments outside any loop are
+    counted across the whole transaction.
+    """
     issues: list[ValidationIssue] = []
 
     max_use_map: dict[tuple[str, Optional[str]], Any] = {}
     _collect_max_use(spec_segments, None, max_use_map)
+    triggers: dict[str, str] = {}
+    _collect_loop_triggers(build_nav_tree(spec_segments), triggers)
 
-    counts: dict[tuple[str, Optional[str]], int] = {}
+    # Keyed by (segment_id, loop_id, iteration). Iteration numbers only grow per
+    # loop path, so every loop instance (including nested ones) gets its own key.
+    counts: dict[tuple[str, Optional[str], int], int] = {}
+    iterations: dict[str, int] = {}
     for seg, loop_path in loop_assignments:
+        seg_id = seg["segment_id"]
         lid = leaf_loop(loop_path)
-        key = (seg["segment_id"], lid)
+        if loop_path and lid is not None and triggers.get(lid) == seg_id:
+            iterations[loop_path] = iterations.get(loop_path, 0) + 1
+        key = (seg_id, lid, iterations.get(loop_path or "", 0))
         counts[key] = counts.get(key, 0) + 1
 
-    for key, count in counts.items():
-        seg_id_mu, lid_mu = key
-        max_use = max_use_map.get(key)
+    for (seg_id_mu, lid_mu, _), count in counts.items():
+        max_use = max_use_map.get((seg_id_mu, lid_mu))
         if max_use is None:
             continue
         try:
@@ -429,6 +442,16 @@ def _collect_max_use(
             mu = item.get("segment_maximum_use")
             if mu is not None and key not in result:
                 result[key] = mu
+
+
+def _collect_loop_triggers(scope: LoopEntry, result: dict[str, str]) -> None:
+    # Map loop_id -> trigger segment_id from the navigation tree, so iteration
+    # boundaries match the ones assign_loop_paths uses. First entry wins.
+    for child in scope.children:
+        if isinstance(child, LoopEntry):
+            if child.loop_id and child.trigger_id and child.loop_id not in result:
+                result[child.loop_id] = child.trigger_id
+            _collect_loop_triggers(child, result)
 
 
 # ---------------------------------------------------------------------------

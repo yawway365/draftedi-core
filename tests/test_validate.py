@@ -589,6 +589,67 @@ class TestCheckSegmentMaxUse:
         assert len(issues) == 0
 
 
+class TestCheckSegmentMaxUsePerIteration:
+    """Max use applies per loop iteration; a new trigger segment starts a new one."""
+
+    @staticmethod
+    def _po1_spec():
+        return [
+            make_spec_segment("BEG", max_use=1),
+            {
+                "type": "loop",
+                "loop_id": "PO1",
+                "segments": [
+                    make_spec_segment("PO1", max_use=1),
+                    make_spec_segment("PID", max_use=2),
+                    {
+                        "type": "loop",
+                        "loop_id": "N1",
+                        "segments": [
+                            make_spec_segment("N1", max_use=1),
+                            make_spec_segment("N3", max_use=1),
+                        ],
+                    },
+                ],
+            },
+            make_spec_segment("CTT", max_use=1),
+        ]
+
+    def _issues(self, seg_ids):
+        spec = self._po1_spec()
+        parsed = [make_segment(seg_id, i) for i, seg_id in enumerate(seg_ids, start=1)]
+        return check_segment_max_use(assign_loop_paths(parsed, build_nav_tree(spec)), spec)
+
+    def test_two_loop_iterations_pass(self):
+        """Two PO1 iterations no longer count as two uses of PO1 (audit item 1)."""
+        assert self._issues(["BEG", "PO1", "PID", "PID", "PO1", "PID", "PID", "CTT"]) == []
+
+    def test_excess_within_one_iteration_warns(self):
+        issues = self._issues(["BEG", "PO1", "PID", "PID", "PID", "PO1", "PID", "CTT"])
+        assert len(issues) == 1
+        assert issues[0]["message"] == (
+            "Segment PID appears 3 time(s) but max use is 2 in loop PO1"
+        )
+
+    def test_each_offending_iteration_reported(self):
+        issues = self._issues(["PO1", "PID", "PID", "PID", "PO1", "PID", "PID", "PID"])
+        assert len(issues) == 2
+
+    def test_nested_loop_counted_per_iteration(self):
+        seg_ids = ["BEG", "PO1", "N1", "N3", "N1", "N3", "PO1", "N1", "N3"]
+        assert self._issues(seg_ids) == []
+
+    def test_nested_loop_excess_warns(self):
+        issues = self._issues(["BEG", "PO1", "N1", "N3", "N3", "PO1", "N1", "N3"])
+        assert len(issues) == 1
+        assert "Segment N3 appears 2 time(s) but max use is 1 in loop N1" in issues[0]["message"]
+
+    def test_root_segments_counted_across_transaction(self):
+        issues = self._issues(["BEG", "PO1", "CTT", "CTT"])
+        assert len(issues) == 1
+        assert issues[0]["message"] == "Segment CTT appears 2 time(s) but max use is 1"
+
+
 # =========================================================================
 # TestDataTypeAdversarial — bug-fix verification
 # =========================================================================

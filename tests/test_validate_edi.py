@@ -432,6 +432,36 @@ class TestValidateEdiNeverRaises:
             "Spec provider _RaisingProvider failed: RuntimeError: backend down"
         )
 
+    def test_huge_envelope_values_do_not_raise(self) -> None:
+        """5,000-digit counts and control numbers exceed int()'s digit limit."""
+        big = "1" * 5000
+        cases = {
+            "IEA01": _edi(iea01=big),
+            "IEA02": _edi(iea02=big),
+            "GE01": _edi(ge01=big),
+            "GE02": _edi(ge02=big),
+            "GS06": _edi().replace("*1200*1*X*", f"*1200*{big}*X*"),
+        }
+        for label, text in cases.items():
+            for edi_input in (text, text.encode()):
+                result = validate_edi(edi_input)
+                assert [e.error_type for e in result.errors] == ["ENVELOPE_ERROR"], label
+
+    def test_unexpected_exception_becomes_internal_error(self, monkeypatch) -> None:
+        """Any exception after parsing is reported, after the findings made so far."""
+        import draftedi
+
+        def boom(*args: object) -> list:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(draftedi, "check_envelope", boom)
+        result = validate_edi(_edi(iea01="2"))
+        assert result.is_valid is None
+        assert [(e.error_type, e.message) for e in result.errors] == [
+            ("ENVELOPE_ERROR", "IEA01 reports 2 functional groups but actual count is 1"),
+            ("INTERNAL_ERROR", "Validation failed: RuntimeError: boom"),
+        ]
+
     def test_gs08_path_traversal_finds_no_spec(self, tmp_path: Path) -> None:
         """Audit item 6: GS08 '../x' must not load a skeleton outside specs_dir."""
         from draftedi.spec.json_skeleton_provider import JSONSkeletonSpecProvider

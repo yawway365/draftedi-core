@@ -67,6 +67,12 @@ def _is_ascii_digits(value: str) -> bool:
     return value.isascii() and value.isdigit()
 
 
+def _canonical_digits(digits: str) -> str:
+    # Compare digit strings as text: int() refuses strings longer than 4,300
+    # digits, and envelope counts and control numbers come from the document.
+    return digits.lstrip("0") or "0"
+
+
 # ---------------------------------------------------------------------------
 # Loop detection — navigation tree + assignment
 # ---------------------------------------------------------------------------
@@ -370,7 +376,7 @@ def _check_trailer(
                 f"{trailer_id}01 value {count!r} is not a valid count",
             )
         )
-    elif int(count) != actual_count:
+    elif _canonical_digits(count) != str(actual_count):
         issues.append(
             make_issue(
                 "error",
@@ -378,7 +384,8 @@ def _check_trailer(
                 trailer_id,
                 None,
                 1,
-                f"{trailer_id}01 reports {int(count)} {counted} but actual count is {actual_count}",
+                f"{trailer_id}01 reports {_canonical_digits(count)} {counted} but actual count is "
+                f"{actual_count}",
             )
         )
 
@@ -390,7 +397,7 @@ def _check_trailer(
         and _is_ascii_digits(control)
         and _is_ascii_digits(header_control)
     ):
-        matches = int(control) == int(header_control)
+        matches = _canonical_digits(control) == _canonical_digits(header_control)
     else:
         matches = control == header_control
     if not matches:

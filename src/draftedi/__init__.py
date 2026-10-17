@@ -96,8 +96,9 @@ def validate_edi(
     via X12Validator.validate_transaction(). (ref: DL-003)
 
     Never raises for any input: a parse failure returns is_valid=False with a
-    PARSE_ERROR, and a spec provider that raises (e.g. on a malformed skeleton
-    file) returns is_valid=None with a SPEC_ERROR.
+    PARSE_ERROR, a spec provider that raises (e.g. on a malformed skeleton file)
+    returns is_valid=None with a SPEC_ERROR, and any other unexpected failure
+    returns is_valid=None with an INTERNAL_ERROR after the findings made so far.
 
     Processes only the first interchange, functional group, and transaction set found
     in edi_text. Multi-interchange documents: call validate_edi() per interchange.
@@ -120,6 +121,43 @@ def validate_edi(
             ],
         )
 
+    errors: list[ValidationError] = []
+    warnings: list[str] = []
+    try:
+        return _validate_parsed(parsed, ge, iea, spec_provider, errors, warnings)
+    except Exception as exc:
+        # Backstop for the never-raises contract: a failure in draftedi's own
+        # checks becomes a finding, keeping what was found before it.
+        errors.append(
+            ValidationError(
+                segment_id="",
+                element_pos=None,
+                error_type="INTERNAL_ERROR",
+                value=None,
+                message=f"Validation failed: {type(exc).__name__}: {exc}",
+            )
+        )
+        return ValidationResult(
+            is_valid=None,
+            errors=errors,
+            warnings=warnings,
+            spec_provider=None if spec_provider is None else type(spec_provider).__name__,
+        )
+
+
+def _validate_parsed(
+    parsed: ParsedFile,
+    ge: Optional[list[str]],
+    iea: Optional[list[str]],
+    spec_provider: Optional[X12SpecProvider],
+    errors: list[ValidationError],
+    warnings: list[str],
+) -> ValidationResult:
+    """validate_edi() after a successful parse.
+
+    Appends to the caller's errors and warnings lists, so the caller still has
+    the findings gathered so far if a check raises unexpectedly.
+    """
     if not parsed["interchanges"]:
         return ValidationResult(
             is_valid=False,
@@ -134,8 +172,6 @@ def validate_edi(
             ],
         )
 
-    errors: list[ValidationError] = []
-    warnings: list[str] = []
     interchange = parsed["interchanges"][0]
     _route_issues(
         _check_trailer(

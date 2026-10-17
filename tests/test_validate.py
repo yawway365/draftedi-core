@@ -380,6 +380,10 @@ class TestCheckEnvelopeRawSE:
         issues = check_envelope(self._tx("SE"), [])
         assert [i["element_pos"] for i in issues] == [1, 2]
 
+    def test_huge_se01_does_not_raise(self):
+        issues = check_envelope(self._tx("SE*" + "9" * 5000 + "*0001"), [])
+        assert [i["element_pos"] for i in issues] == [1]
+
     def test_separator_read_from_segment(self):
         """The element separator is whatever follows the segment ID."""
         assert check_envelope(self._tx("SE|2|0001"), []) == []
@@ -404,6 +408,16 @@ class TestCheckTrailer:
         assert issues[0]["message"] == (
             "IEA02 control number None does not match ISA13 '000000001'"
         )
+
+    def test_huge_values_compared_without_int(self):
+        """int() refuses strings over 4,300 digits; trailer values are compared as text."""
+        big = "1" * 5000
+        assert (
+            _check_trailer("GE", ["1", "0" + big], 1, "transaction sets", "GS06", big, True) == []
+        )
+        issues = _check_trailer("GE", [big, big + "2"], 1, "transaction sets", "GS06", big, True)
+        assert [i["element_pos"] for i in issues] == [1, 2]
+        assert issues[0]["message"].endswith("transaction sets but actual count is 1")
 
     def test_count_mismatch(self):
         issues = _check_trailer(

@@ -49,11 +49,11 @@ from draftedi.validate import (
 )
 
 # X12SpecProvider and MissingSpecError at top-level only; TypedDicts remain at
-# draftedi.spec to keep consumer imports minimal. (ref: DL-004)
+# draftedi.spec to keep consumer imports minimal.
 from draftedi.spec.protocol import X12SpecProvider
 from draftedi.spec.exceptions import MissingSpecError
 
-# validator.core re-exported at top-level for consumer convenience. (ref: DL-006)
+# validator.core re-exported at top-level for consumer convenience.
 from draftedi.validator.core import X12Validator, ValidationResult, ValidationError
 
 # Private helpers shared with validate_edi(); not part of __all__.
@@ -99,7 +99,7 @@ def validate_edi(
     against the transaction sets and GS06, SE01/SE02 against the segments and ST02.
     Their findings are errors. Without spec_provider, or when it has no spec for
     the version/transaction set, is_valid is None. With a spec: full validation
-    via X12Validator.validate_transaction(). (ref: DL-003)
+    via X12Validator.validate_transaction().
 
     Never raises for any input: a parse failure returns is_valid=False with a
     PARSE_ERROR, a spec provider that raises (e.g. on a malformed skeleton file)

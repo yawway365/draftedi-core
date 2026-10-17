@@ -1,6 +1,6 @@
 # Separate from ci.yml to isolate the OIDC trust boundary: the 'pypi' environment
 # and id-token: write permission are only active for tag-triggered publish jobs,
-# not every CI run. (ref: DL-005)
+# not every CI run.
 #
 # Pre-requisites before first publish:
 #   1. Configure OIDC Trusted Publisher in PyPI project settings (GitHub Actions provider)

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]   # Tags trigger runs lint+test on tagged commits; without this, a regression
-                        # introduced after last branch push could be tagged and shipped. (ref: DL-008)
+                        # introduced after last branch push could be tagged and shipped.
   pull_request:
     branches: [main]
 
@@ -21,7 +21,7 @@ jobs:
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
       # mypy enforces Protocol contract at CI time; type regressions pass
-      # undetected without this step. (ref: DL-008)
+      # undetected without this step.
       - run: mypy src/
 
   test:

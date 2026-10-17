@@ -2,21 +2,13 @@
 
 Pure validation functions for X12 EDI documents. All functions are
 database-free and depend only on Python standard library modules.
-
-Functions are extracted from the monolith validate_x12.py with the
-following changes:
-
-- Private names (``_foo``) are promoted to public names (``foo``).
-- Bug fixes applied to ``check_element_data_type`` (DT calendar-aware
-  validation, N-type single-minus enforcement, TM seconds range check)
-  and ``check_relational_conditions`` (Exclusion condition dedup).
-- DB-coupled functions are omitted entirely.
 """
 
 from __future__ import annotations
 
 import calendar
 import re
+from collections.abc import Mapping
 from typing import Any, Optional, TypedDict
 
 
@@ -282,7 +274,7 @@ def leaf_loop(loop_path: Optional[str]) -> Optional[str]:
 
 
 def check_envelope(
-    transaction: dict[str, Any],
+    transaction: Mapping[str, Any],
     parsed_segments: list[Any],
 ) -> list[ValidationIssue]:
     """Check the ST/SE envelope of a transaction set.

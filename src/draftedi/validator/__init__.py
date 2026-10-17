@@ -2,7 +2,7 @@
 
 Public surface: X12Validator (validation executor), ValidationResult (outcome),
 ValidationError (per-segment/element issue). All check logic delegates to
-validate.py; this package provides the class interface only. (ref: DL-001)
+validate.py; this package provides the class interface only.
 """
 
 from __future__ import annotations

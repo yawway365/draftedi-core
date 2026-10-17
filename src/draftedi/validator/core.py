@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -15,7 +16,7 @@ class ValidationError:
 
     Maps from validate.py ValidationIssue via _issue_to_error(). error_type
     is derived from category using _CATEGORY_TO_ERROR_TYPE; value is None
-    when the issue is structural (not element-value-level). (ref: DL-005)
+    when the issue is structural (not element-value-level).
     """
 
     segment_id: str
@@ -34,7 +35,7 @@ class ValidationResult:
     is_valid=True: all checks passed with a matched spec.
     is_valid=False: one or more errors detected with a matched spec or parse failure.
     Never raises MissingSpecError; callers test is_valid is None to detect
-    spec-absent results. (ref: DL-003)
+    spec-absent results.
 
     Issues are routed by severity: "error" issues become ValidationError entries
     in errors; "warning" issues are added to warnings as message strings and do
@@ -64,7 +65,7 @@ def _issue_to_error(issue: _validate.ValidationIssue) -> ValidationError:
 
     Looks up error_type from _CATEGORY_TO_ERROR_TYPE; falls back to TYPE_ERROR
     for unknown categories. value is always None — ValidationIssue does not carry
-    the raw element value. (ref: DL-005)
+    the raw element value.
     """
     error_type = _CATEGORY_TO_ERROR_TYPE.get(issue["category"], "TYPE_ERROR")
     return ValidationError(
@@ -84,7 +85,7 @@ def _route_issues(
     """Append each issue to errors or warnings according to its severity.
 
     Shared by X12Validator and validate_edi() so both report a given check in
-    the same list. (ref: DL-005)
+    the same list.
     """
     for issue in issues:
         if issue["severity"] == "error":
@@ -117,9 +118,9 @@ def _spec_to_hierarchical(spec: TransactionSetSpec) -> list[dict[str, Any]]:
     validate.py check functions expect a hierarchical dict list where loop segments
     are nested under {type: loop, loop_id: ..., segments: [...]} entries. This function
     reconstructs that hierarchy from the flat SegmentSpec list using loop_id/loop_level
-    fields. (ref: DL-002, R-001)
+    fields.
 
-    Key translations applied to each segment dict (ref: R-002):
+    Key translations applied to each segment dict:
       requirement          -> segment_requirement
       max_use              -> segment_maximum_use
       condition_type       -> transaction_set_segment_rc_type
@@ -180,7 +181,7 @@ def _spec_to_hierarchical(spec: TransactionSetSpec) -> list[dict[str, Any]]:
 
 
 def _segment_specs(
-    transaction: dict[str, Any], spec: TransactionSetSpec
+    transaction: Mapping[str, Any], spec: TransactionSetSpec
 ) -> list[tuple[dict[str, Any], Optional[SegmentSpec]]]:
     """Pair each parsed segment with the SegmentSpec that governs it.
 
@@ -188,7 +189,7 @@ def _segment_specs(
     the spec is looked up by (segment_id, loop_id) of the loop the segment is
     assigned to, keyed like validate.build_spec_lookup(). A segment assigned
     outside every loop that defines it falls back to the first spec entry with
-    its ID. Loops that share a loop_id cannot be told apart. (ref: R-001)
+    its ID. Loops that share a loop_id cannot be told apart.
     """
     by_loop: dict[tuple[str, Optional[str]], SegmentSpec] = {}
     by_id: dict[str, SegmentSpec] = {}
@@ -209,18 +210,18 @@ class X12Validator:
     """Stateless X12 transaction validator backed by an X12SpecProvider.
 
     Delegates all check logic to existing validate.py functions; no check
-    logic is duplicated here. (ref: DL-001)
+    logic is duplicated here.
 
     Each _check_* method calls _spec_to_hierarchical() independently. The
     conversion overhead is acceptable at per-validate_transaction() granularity;
-    caching at the method level is not done to keep the class stateless. (ref: DL-002)
+    caching at the method level is not done to keep the class stateless.
     """
 
     def __init__(self, spec_provider: X12SpecProvider) -> None:
         self._provider = spec_provider
 
     def validate_transaction(
-        self, parsed_transaction: dict[str, Any], version: str
+        self, parsed_transaction: Mapping[str, Any], version: str
     ) -> ValidationResult:
         """Validate a single parsed X12 transaction dict.
 
@@ -229,7 +230,7 @@ class X12Validator:
         is found for the given version/ts_id pair; does not raise MissingSpecError.
         When a spec is available, also runs mandatory segments, max-use,
         mandatory elements, element types and relational conditions.
-        Findings are routed by severity (see ValidationResult). (ref: DL-001, DL-003)
+        Findings are routed by severity (see ValidationResult).
         """
         errors: list[ValidationError] = []
         warnings: list[str] = []
@@ -264,20 +265,20 @@ class X12Validator:
             spec_provider=type(self._provider).__name__,
         )
 
-    def _check_envelope(self, transaction: dict[str, Any]) -> list[_validate.ValidationIssue]:
+    def _check_envelope(self, transaction: Mapping[str, Any]) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_envelope. Thin delegation: X12Validator holds
         # no check logic so validate.py remains the single authoritative source for
-        # all check behavior; no spec required for envelope checks. (ref: DL-001)
+        # all check behavior; no spec required for envelope checks.
         parsed_segments: list[Any] = transaction.get("segments", [])
         return _validate.check_envelope(transaction, parsed_segments)
 
     def _check_mandatory_segments(
-        self, transaction: dict[str, Any], spec: TransactionSetSpec
+        self, transaction: Mapping[str, Any], spec: TransactionSetSpec
     ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_mandatory_segments. Thin delegation pattern:
         # wrap-not-rewrite keeps zero regression risk on the 621 LOC check logic.
         # Spec conversion via _spec_to_hierarchical is the only logic added here.
-        # (ref: DL-001, DL-002)
+        #
         hierarchical = _spec_to_hierarchical(spec)
         root = _validate.build_nav_tree(hierarchical)
         parsed_segments: list[Any] = transaction.get("segments", [])
@@ -285,10 +286,10 @@ class X12Validator:
         return _validate.check_mandatory_segments(loop_assignments, hierarchical)
 
     def _check_segment_max_use(
-        self, transaction: dict[str, Any], spec: TransactionSetSpec
+        self, transaction: Mapping[str, Any], spec: TransactionSetSpec
     ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_segment_max_use. Rebuilds nav tree independently
-        # because stateless design avoids caching between _check_* calls. (ref: DL-001, DL-002)
+        # because stateless design avoids caching between _check_* calls.
         hierarchical = _spec_to_hierarchical(spec)
         root = _validate.build_nav_tree(hierarchical)
         parsed_segments: list[Any] = transaction.get("segments", [])
@@ -296,7 +297,7 @@ class X12Validator:
         return _validate.check_segment_max_use(loop_assignments, hierarchical)
 
     def _check_mandatory_elements(
-        self, transaction: dict[str, Any], spec: TransactionSetSpec
+        self, transaction: Mapping[str, Any], spec: TransactionSetSpec
     ) -> list[ValidationError]:
         # A mandatory (M) element must carry data in every occurrence of its
         # segment; a composite counts as present when any component has data.
@@ -324,12 +325,12 @@ class X12Validator:
         return errors
 
     def _check_element_types(
-        self, transaction: dict[str, Any], spec: TransactionSetSpec, version: str
+        self, transaction: Mapping[str, Any], spec: TransactionSetSpec, version: str
     ) -> list[ValidationError]:
         # Delegates per-element checks to validate.check_element_data_type and
         # check_element_length. Thin delegation: X12Validator iterates segments/elements
         # but delegates all type/length logic to validate.py functions unchanged.
-        # Code validation runs only for ID-typed elements with codes. (ref: DL-001)
+        # Code validation runs only for ID-typed elements with codes.
         errors: list[ValidationError] = []
         for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:
@@ -383,12 +384,12 @@ class X12Validator:
         return errors
 
     def _check_relational_conditions(
-        self, transaction: dict[str, Any], spec: TransactionSetSpec
+        self, transaction: Mapping[str, Any], spec: TransactionSetSpec
     ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_relational_conditions. Thin delegation: only
         # added logic is translating RelationalCondition TypedDict keys to the
         # validate.py rc dict format; all condition logic stays in validate.py.
-        # (ref: DL-001, R-002)
+        #
         issues: list[_validate.ValidationIssue] = []
         for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:

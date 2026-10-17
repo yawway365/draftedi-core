@@ -36,17 +36,17 @@ class JSONSkeletonSpecProvider:
 
     Satisfies X12SpecProvider via structural subtyping (duck typing). No explicit
     inheritance from X12SpecProvider is used; this avoids coupling draftedi-core's
-    public implementations to the Protocol class. (ref: DL-004)
+    public implementations to the Protocol class.
 
     Skeleton files contain structural facts only: types, lengths, requirements, loop
     structure, relational conditions. element_name and segment_name are always None
     because ASC X12 descriptive names are copyrighted and intentionally excluded from
-    open-source distribution. (ref: DL-004)
+    open-source distribution.
 
     Caching: per-instance dict avoids lru_cache memory leak on instance methods.
     Cache is populated on first access and never invalidated. Spec files are treated
     as static artifacts; users who modify JSON files after construction must create a
-    new provider instance. (ref: R-003)
+    new provider instance.
 
     Parameters
     ----------
@@ -65,7 +65,7 @@ class JSONSkeletonSpecProvider:
         Returns None when the file does not exist or when version/ts_id are not
         valid X12 identifiers; callers must handle None rather than catching
         FileNotFoundError. Cache key is "{version}-{ts_id}". Once cached, the dict
-        is returned directly on subsequent calls without re-reading disk. (ref: R-003)
+        is returned directly on subsequent calls without re-reading disk.
         """
         if not (_is_valid_version(version) and _is_valid_ts_id(ts_id)):
             return None
@@ -95,7 +95,7 @@ class JSONSkeletonSpecProvider:
         """Return the TransactionSetSpec for (version, ts_id), or None if not found.
 
         Loads and caches the skeleton JSON. transaction_set_name is None because
-        copyrighted ASC X12 descriptive names are excluded from skeleton files. (ref: DL-004)
+        copyrighted ASC X12 descriptive names are excluded from skeleton files.
         """
         spec = self._load(version, ts_id)
         if not spec:
@@ -130,7 +130,6 @@ class JSONSkeletonSpecProvider:
         Searches cached transaction sets first; if not found, scans the specs_dir
         for all {version}-*.json files and loads them to populate the cache before
         retrying. segment_name is None for the same reason as transaction_set_name.
-        (ref: DL-004)
         """
         if not _is_valid_version(version):
             return None
@@ -152,7 +151,7 @@ class JSONSkeletonSpecProvider:
         """Return sorted list of X12 version strings present in specs_dir.
 
         Extracts the version prefix (first hyphen-delimited token) from each
-        *.json filename. Does not load or validate file contents. (ref: DL-004)
+        *.json filename. Does not load or validate file contents.
         """
         versions: set[str] = set()
         for f in self._dir.glob("*.json"):
@@ -166,7 +165,7 @@ class JSONSkeletonSpecProvider:
         """Map a raw skeleton JSON segment dict to a SegmentSpec TypedDict.
 
         segment_name is always None. element_name is always None. Both omitted
-        to exclude copyrighted ASC X12 descriptive text. (ref: DL-004)
+        to exclude copyrighted ASC X12 descriptive text.
         """
         return SegmentSpec(
             segment_id=segment_id,

@@ -137,12 +137,13 @@ def validate_edi(
         "segments": [
             {
                 "segment_id": seg["segment_id"],
+                # element_pos, not list index: repetitions share their element's position
                 "elements": [
                     {
-                        "element_pos": i + 1,
+                        "element_pos": elem["element_pos"],
                         "value_text": elem["value_text"],
                     }
-                    for i, elem in enumerate(seg["elements"])
+                    for elem in seg["elements"]
                 ],
             }
             for seg in transaction["segments"]

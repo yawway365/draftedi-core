@@ -273,15 +273,35 @@ def check_envelope(
     transaction: dict[str, Any],
     parsed_segments: list[Any],
 ) -> list[ValidationIssue]:
-    """Check SE01 reported segment count against actual parsed segment count."""
+    """Check the ST/SE envelope of a transaction set.
+
+    Compares SE01 with the actual segment count (``parsed_segments`` plus ST and
+    SE). When ``transaction`` carries ``raw_se_segment``, as ``parse_edi_file``
+    output does, SE01 and SE02 are read from that segment, so a missing SE, a
+    non-numeric SE01 and an SE02 that differs from ST02 (``control_number``) are
+    reported too.
+
+    Findings have severity ``"error"``: X12 rejects a transaction set whose
+    trailer does not agree with its header.
+    """
+    actual = len(parsed_segments) + 2  # +2 for ST and SE themselves
+    if "raw_se_segment" in transaction:
+        return _check_trailer(
+            "SE",
+            _trailer_elements(transaction["raw_se_segment"], "SE"),
+            actual,
+            "segments",
+            "ST02",
+            transaction.get("control_number"),
+        )
+
     issues: list[ValidationIssue] = []
     reported = transaction.get("segment_count_reported")
     if reported is not None:
-        actual = len(parsed_segments) + 2  # +2 for ST and SE themselves
         if reported != actual:
             issues.append(
                 make_issue(
-                    "warning",
+                    "error",
                     "envelope",
                     "SE",
                     None,
@@ -289,6 +309,102 @@ def check_envelope(
                     f"SE01 reports {reported} segments but actual count is {actual}",
                 )
             )
+    return issues
+
+
+def _trailer_elements(raw_segment: Optional[str], segment_id: str) -> Optional[list[str]]:
+    # The element separator is the character that follows the segment ID, so a
+    # raw trailer can be split without the interchange's SeparatorInfo.
+    if raw_segment is None:
+        return None
+    if len(raw_segment) <= len(segment_id):
+        return []
+    return raw_segment[len(segment_id) + 1 :].split(raw_segment[len(segment_id)])
+
+
+def _is_count(value: str) -> bool:
+    # ASCII digits only: str.isdigit() alone accepts characters such as "²"
+    # that int() rejects.
+    return value.isascii() and value.isdigit()
+
+
+def _check_trailer(
+    trailer_id: str,
+    trailer: Optional[list[str]],
+    actual_count: int,
+    counted: str,
+    header_ref: str,
+    header_control: Optional[str],
+    numeric_control: bool = False,
+) -> list[ValidationIssue]:
+    """Check an SE, GE or IEA trailer against the envelope it closes.
+
+    ``trailer`` holds the trailer's elements, or ``None`` when it is missing.
+    Element 1 must equal ``actual_count`` and element 2 must equal
+    ``header_control`` (named ``header_ref`` in messages, e.g. ``"GS06"``).
+    GS06/GE02 and ISA13/IEA02 are numeric (N0), so ``numeric_control`` compares
+    them by value; ST02/SE02 are AN and compare as text.
+    """
+    if trailer is None:
+        return [
+            make_issue(
+                "error",
+                "envelope",
+                trailer_id,
+                None,
+                None,
+                f"{trailer_id} segment is missing for {header_ref} {header_control!r}",
+            )
+        ]
+
+    issues: list[ValidationIssue] = []
+    count = trailer[0] if trailer else ""
+    if not _is_count(count):
+        issues.append(
+            make_issue(
+                "error",
+                "envelope",
+                trailer_id,
+                None,
+                1,
+                f"{trailer_id}01 value {count!r} is not a valid count",
+            )
+        )
+    elif int(count) != actual_count:
+        issues.append(
+            make_issue(
+                "error",
+                "envelope",
+                trailer_id,
+                None,
+                1,
+                f"{trailer_id}01 reports {int(count)} {counted} but actual count is {actual_count}",
+            )
+        )
+
+    control = trailer[1] if len(trailer) > 1 else None
+    if (
+        numeric_control
+        and control
+        and header_control
+        and _is_count(control)
+        and _is_count(header_control)
+    ):
+        matches = int(control) == int(header_control)
+    else:
+        matches = control == header_control
+    if not matches:
+        issues.append(
+            make_issue(
+                "error",
+                "envelope",
+                trailer_id,
+                None,
+                2,
+                f"{trailer_id}02 control number {control!r} does not match "
+                f"{header_ref} {header_control!r}",
+            )
+        )
     return issues
 
 

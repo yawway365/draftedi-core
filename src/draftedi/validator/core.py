@@ -29,11 +29,16 @@ class ValidationError:
 class ValidationResult:
     """Outcome of a validation run.
 
-    is_valid=None: spec absent or spec returned no match; envelope check only.
+    is_valid=None: spec absent or spec returned no match; envelope checks only,
+    so errors may still hold envelope errors.
     is_valid=True: all checks passed with a matched spec.
     is_valid=False: one or more errors detected with a matched spec or parse failure.
     Never raises MissingSpecError; callers test is_valid is None to detect
     spec-absent results. (ref: DL-003)
+
+    Issues are routed by severity: "error" issues become ValidationError entries
+    in errors; "warning" issues are added to warnings as message strings and do
+    not affect is_valid.
     """
 
     is_valid: Optional[bool]
@@ -50,7 +55,7 @@ _CATEGORY_TO_ERROR_TYPE: dict[str, str] = {
     "element_type": "TYPE_ERROR",
     "element_length": "INVALID_LENGTH",
     "element_code": "INVALID_CODE",
-    "envelope": "MISSING_MANDATORY",
+    "envelope": "ENVELOPE_ERROR",
 }
 
 
@@ -69,6 +74,41 @@ def _issue_to_error(issue: _validate.ValidationIssue) -> ValidationError:
         value=None,
         message=issue["message"],
     )
+
+
+def _route_issues(
+    issues: list[_validate.ValidationIssue],
+    errors: list[ValidationError],
+    warnings: list[str],
+) -> None:
+    """Append each issue to errors or warnings according to its severity.
+
+    Shared by X12Validator and validate_edi() so both report a given check in
+    the same list. (ref: DL-005)
+    """
+    for issue in issues:
+        if issue["severity"] == "error":
+            errors.append(_issue_to_error(issue))
+        else:
+            warnings.append(issue["message"])
+
+
+def _element_values(segment: dict[str, Any]) -> dict[int, str]:
+    """Map element position to its text, for presence checks only.
+
+    Composite elements carry their data in components (value_text is None), so
+    their component values are concatenated. A repeated element is present when
+    any repetition has data.
+    """
+    values: dict[int, str] = {}
+    for elem in segment.get("elements", []):
+        pos: int = elem.get("element_pos", 0)
+        text: str = elem.get("value_text") or "".join(
+            c.get("value_text") or "" for c in elem.get("components") or []
+        )
+        if text or pos not in values:
+            values[pos] = text
+    return values
 
 
 def _spec_to_hierarchical(spec: TransactionSetSpec) -> list[dict[str, Any]]:
@@ -158,49 +198,56 @@ class X12Validator:
     ) -> ValidationResult:
         """Validate a single parsed X12 transaction dict.
 
-        Returns ValidationResult(is_valid=None) when no spec is found for the
-        given version/ts_id pair; does not raise. Runs five check passes when
-        spec is available: envelope, mandatory segments, max-use, element types,
-        relational conditions. (ref: DL-001, DL-003)
+        The envelope check runs first and needs no spec. Returns
+        ValidationResult(is_valid=None) with the envelope findings when no spec
+        is found for the given version/ts_id pair; does not raise MissingSpecError.
+        When a spec is available, also runs mandatory segments, max-use,
+        mandatory elements, element types and relational conditions.
+        Findings are routed by severity (see ValidationResult). (ref: DL-001, DL-003)
         """
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
+        _route_issues(self._check_envelope(parsed_transaction), errors, warnings)
+
         ts_id: Optional[str] = parsed_transaction.get("transaction_set_id")
         spec = self._provider.get_transaction_set(version, ts_id or "")
 
         if spec is None:
+            warnings.append(
+                f"No spec found for version={version!r}, ts={ts_id!r}. "
+                f"Structural checks only. "
+                f"Provider: {type(self._provider).__name__}"
+            )
             return ValidationResult(
                 is_valid=None,
-                warnings=[
-                    f"No spec found for version={version!r}, ts={ts_id!r}. "
-                    f"Structural checks only. "
-                    f"Provider: {type(self._provider).__name__}"
-                ],
+                errors=errors,
+                warnings=warnings,
                 spec_provider=type(self._provider).__name__,
             )
 
-        errors: list[ValidationError] = []
-        errors += self._check_envelope(parsed_transaction)
-        errors += self._check_mandatory_segments(parsed_transaction, spec)
-        errors += self._check_segment_max_use(parsed_transaction, spec)
+        _route_issues(self._check_mandatory_segments(parsed_transaction, spec), errors, warnings)
+        _route_issues(self._check_segment_max_use(parsed_transaction, spec), errors, warnings)
+        errors += self._check_mandatory_elements(parsed_transaction, spec)
         errors += self._check_element_types(parsed_transaction, spec, version)
-        errors += self._check_relational_conditions(parsed_transaction, spec)
+        _route_issues(self._check_relational_conditions(parsed_transaction, spec), errors, warnings)
 
         return ValidationResult(
             is_valid=len(errors) == 0,
             errors=errors,
+            warnings=warnings,
             spec_provider=type(self._provider).__name__,
         )
 
-    def _check_envelope(self, transaction: dict[str, Any]) -> list[ValidationError]:
+    def _check_envelope(self, transaction: dict[str, Any]) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_envelope. Thin delegation: X12Validator holds
         # no check logic so validate.py remains the single authoritative source for
         # all check behavior; no spec required for envelope checks. (ref: DL-001)
         parsed_segments: list[Any] = transaction.get("segments", [])
-        issues = _validate.check_envelope(transaction, parsed_segments)
-        return [_issue_to_error(i) for i in issues]
+        return _validate.check_envelope(transaction, parsed_segments)
 
     def _check_mandatory_segments(
         self, transaction: dict[str, Any], spec: TransactionSetSpec
-    ) -> list[ValidationError]:
+    ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_mandatory_segments. Thin delegation pattern:
         # wrap-not-rewrite keeps zero regression risk on the 621 LOC check logic.
         # Spec conversion via _spec_to_hierarchical is the only logic added here.
@@ -209,20 +256,48 @@ class X12Validator:
         root = _validate.build_nav_tree(hierarchical)
         parsed_segments: list[Any] = transaction.get("segments", [])
         loop_assignments = _validate.assign_loop_paths(parsed_segments, root)
-        issues = _validate.check_mandatory_segments(loop_assignments, hierarchical)
-        return [_issue_to_error(i) for i in issues]
+        return _validate.check_mandatory_segments(loop_assignments, hierarchical)
 
     def _check_segment_max_use(
         self, transaction: dict[str, Any], spec: TransactionSetSpec
-    ) -> list[ValidationError]:
+    ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_segment_max_use. Rebuilds nav tree independently
         # because stateless design avoids caching between _check_* calls. (ref: DL-001, DL-002)
         hierarchical = _spec_to_hierarchical(spec)
         root = _validate.build_nav_tree(hierarchical)
         parsed_segments: list[Any] = transaction.get("segments", [])
         loop_assignments = _validate.assign_loop_paths(parsed_segments, root)
-        issues = _validate.check_segment_max_use(loop_assignments, hierarchical)
-        return [_issue_to_error(i) for i in issues]
+        return _validate.check_segment_max_use(loop_assignments, hierarchical)
+
+    def _check_mandatory_elements(
+        self, transaction: dict[str, Any], spec: TransactionSetSpec
+    ) -> list[ValidationError]:
+        # A mandatory (M) element must carry data in every occurrence of its
+        # segment; a composite counts as present when any component has data.
+        # Trailing elements omitted from the segment text are missing too, so the
+        # element specs are walked rather than the parsed elements.
+        errors: list[ValidationError] = []
+        spec_by_id = {s["segment_id"]: s for s in spec["segments"]}
+        for seg in transaction.get("segments", []):
+            seg_id: str = seg.get("segment_id", "")
+            seg_spec = spec_by_id.get(seg_id)
+            if seg_spec is None:
+                continue
+            val_by_pos = _element_values(seg)
+            for espec in seg_spec["elements"]:
+                pos = espec["sequence"]
+                if espec["requirement"] == "M" and not val_by_pos.get(pos):
+                    errors.append(
+                        ValidationError(
+                            segment_id=seg_id,
+                            element_pos=pos,
+                            error_type="MISSING_MANDATORY",
+                            value=None,
+                            message=f"Mandatory element {seg_id}{str(pos).zfill(2)} "
+                            f"({espec['element_id']}) is missing",
+                        )
+                    )
+        return errors
 
     def _check_element_types(
         self, transaction: dict[str, Any], spec: TransactionSetSpec, version: str
@@ -287,22 +362,19 @@ class X12Validator:
 
     def _check_relational_conditions(
         self, transaction: dict[str, Any], spec: TransactionSetSpec
-    ) -> list[ValidationError]:
+    ) -> list[_validate.ValidationIssue]:
         # Delegates to validate.check_relational_conditions. Thin delegation: only
         # added logic is translating RelationalCondition TypedDict keys to the
         # validate.py rc dict format; all condition logic stays in validate.py.
         # (ref: DL-001, R-002)
-        errors: list[ValidationError] = []
+        issues: list[_validate.ValidationIssue] = []
         spec_by_id = {s["segment_id"]: s for s in spec["segments"]}
         for seg in transaction.get("segments", []):
             seg_id = seg.get("segment_id", "")
             seg_spec = spec_by_id.get(seg_id)
             if seg_spec is None:
                 continue
-            val_by_pos: dict[int, str] = {}
-            for elem in seg.get("elements", []):
-                pos = elem.get("element_pos", 0)
-                val_by_pos[pos] = elem.get("value_text", "") or ""
+            val_by_pos = _element_values(seg)
             rc_list = [
                 {
                     "transaction_set_segment_rc_type": rc["condition_type"],
@@ -312,6 +384,5 @@ class X12Validator:
                 }
                 for rc in seg_spec["relational_conditions"]
             ]
-            issues = _validate.check_relational_conditions(seg_id, rc_list, val_by_pos)
-            errors += [_issue_to_error(i) for i in issues]
-        return errors
+            issues += _validate.check_relational_conditions(seg_id, rc_list, val_by_pos)
+        return issues

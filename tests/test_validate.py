@@ -16,6 +16,7 @@ from draftedi.validate import (
     check_segment_max_use,
     SegEntry,
     LoopEntry,
+    _check_trailer,
 )
 from helpers import make_segment, make_spec_segment
 
@@ -315,12 +316,14 @@ class TestCheckEnvelope:
         issues = check_envelope(tx, parsed)
         assert len(issues) == 0
 
-    def test_count_mismatch_warns(self):
+    def test_count_mismatch_errors(self):
+        """Envelope findings are errors: X12 rejects a mismatched trailer."""
         tx = {"segment_count_reported": 10}
         parsed = [make_segment("BEG", 1), make_segment("CTT", 2)]
         issues = check_envelope(tx, parsed)
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "envelope"
         assert "SE01 reports 10" in issues[0]["message"]
 
     def test_none_count_skips(self):
@@ -328,6 +331,85 @@ class TestCheckEnvelope:
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
         assert len(issues) == 0
+
+
+class TestCheckEnvelopeRawSE:
+    """parse_edi_file transactions carry raw_se_segment; SE01/SE02 come from it."""
+
+    def _tx(self, raw_se, control="0001"):
+        return {"control_number": control, "segment_count_reported": None, "raw_se_segment": raw_se}
+
+    def test_matching_trailer_passes(self):
+        parsed = [make_segment("BEG", 1)]
+        assert check_envelope(self._tx("SE*3*0001"), parsed) == []
+
+    def test_se02_mismatch_errors(self):
+        issues = check_envelope(self._tx("SE*3*0002"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["element_pos"] == 2
+        assert issues[0]["message"] == "SE02 control number '0002' does not match ST02 '0001'"
+
+    def test_se02_compares_as_text(self):
+        """ST02/SE02 are AN: '1' and '0001' are different control numbers."""
+        issues = check_envelope(self._tx("SE*3*1"), [make_segment("BEG", 1)])
+        assert [i["element_pos"] for i in issues] == [2]
+
+    def test_se01_mismatch_errors(self):
+        issues = check_envelope(self._tx("SE*9*0001"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["message"] == "SE01 reports 9 segments but actual count is 3"
+
+    def test_se01_non_numeric_errors(self):
+        issues = check_envelope(self._tx("SE*X*0001"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert "SE01 value 'X' is not a valid count" in issues[0]["message"]
+
+    def test_se01_non_ascii_digit_errors(self):
+        """'²'.isdigit() is True but int('²') raises; it must be reported, not raise."""
+        issues = check_envelope(self._tx("SE*\u00b2*0001"), [])
+        assert "not a valid count" in issues[0]["message"]
+
+    def test_missing_se_errors(self):
+        issues = check_envelope(self._tx(None), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["message"] == "SE segment is missing for ST02 '0001'"
+
+    def test_se_without_elements_reports_count_and_control(self):
+        issues = check_envelope(self._tx("SE"), [])
+        assert [i["element_pos"] for i in issues] == [1, 2]
+
+    def test_separator_read_from_segment(self):
+        """The element separator is whatever follows the segment ID."""
+        assert check_envelope(self._tx("SE|2|0001"), []) == []
+
+
+class TestCheckTrailer:
+    def test_numeric_control_compares_by_value(self):
+        """GS06/GE02 and ISA13/IEA02 are N0: '1' equals '000000001'."""
+        issues = _check_trailer("GE", ["1", "000000001"], 1, "transaction sets", "GS06", "1", True)
+        assert issues == []
+
+    def test_numeric_control_mismatch(self):
+        issues = _check_trailer("GE", ["1", "2"], 1, "transaction sets", "GS06", "1", True)
+        assert issues[0]["message"] == "GE02 control number '2' does not match GS06 '1'"
+
+    def test_numeric_control_non_digits_compare_as_text(self):
+        issues = _check_trailer("GE", ["1", "A"], 1, "transaction sets", "GS06", "1", True)
+        assert len(issues) == 1
+
+    def test_missing_control_number(self):
+        issues = _check_trailer("IEA", ["1"], 1, "functional groups", "ISA13", "000000001", True)
+        assert issues[0]["message"] == (
+            "IEA02 control number None does not match ISA13 '000000001'"
+        )
+
+    def test_count_mismatch(self):
+        issues = _check_trailer(
+            "IEA", ["2", "000000001"], 1, "functional groups", "ISA13", "000000001", True
+        )
+        assert issues[0]["message"] == "IEA01 reports 2 functional groups but actual count is 1"
 
 
 # =========================================================================
@@ -807,7 +889,7 @@ class TestLoopPathAdversarial:
 
 class TestEnvelopeAdversarial:
     def test_negative_segment_count(self):
-        """Negative segment_count_reported triggers warning."""
+        """Negative segment_count_reported is reported."""
         tx = {"segment_count_reported": -5}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
@@ -815,7 +897,7 @@ class TestEnvelopeAdversarial:
         assert "SE01 reports -5" in issues[0]["message"]
 
     def test_very_large_segment_count(self):
-        """Very large segment count triggers warning."""
+        """Very large segment count is reported."""
         tx = {"segment_count_reported": 999999999}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
@@ -823,14 +905,14 @@ class TestEnvelopeAdversarial:
         assert "999999999" in issues[0]["message"]
 
     def test_string_segment_count_warns(self):
-        """String segment_count_reported (type mismatch) triggers warning."""
+        """String segment_count_reported (type mismatch) is reported."""
         tx = {"segment_count_reported": "12"}
         parsed = [make_segment("BEG", 1)] * 10
         issues = check_envelope(tx, parsed)
         assert len(issues) == 1
 
     def test_zero_segment_count(self):
-        """Zero segment count always triggers warning."""
+        """Zero segment count is always reported."""
         tx = {"segment_count_reported": 0}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)

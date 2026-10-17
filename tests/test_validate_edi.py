@@ -339,6 +339,15 @@ class TestValidateEdiElements:
         result = validate_edi(_edi(body), spec_provider=_provider(tmp_path))
         assert result.is_valid is True, result.errors
 
+    def test_non_ascii_date_is_type_error(self, tmp_path: Path) -> None:
+        """A '²' date is a TYPE_ERROR finding, not a SPEC_ERROR from a ValueError."""
+        body = ["BEG*00*NE*PO-1**\u00b2\u00b2\u00b2\u00b20101"] + _PO_BODY[1:]
+        result = validate_edi(_edi(body), spec_provider=_provider(tmp_path))
+        assert result.is_valid is False
+        assert [(e.segment_id, e.element_pos, e.error_type) for e in result.errors] == [
+            ("BEG", 5, "TYPE_ERROR")
+        ]
+
     def test_max_use_exceeded_is_error(self, tmp_path: Path) -> None:
         body = _PO_BODY + ["CTT*2"]
         result = validate_edi(_edi(body), spec_provider=_provider(tmp_path))

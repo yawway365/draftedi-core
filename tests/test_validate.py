@@ -811,6 +811,47 @@ class TestDataTypeAdversarial:
         assert result is not None
 
 
+class TestDataTypeNonAsciiDigits:
+    """X12 numeric data is ASCII; other Unicode digits are rejected, never raised on."""
+
+    def test_dt_superscript_digits_rejected(self):
+        """'²'.isdigit() is True but int('²') raises; this used to raise ValueError."""
+        result = check_element_data_type("\u00b2\u00b2\u00b2\u00b20101", "DT", "E100")
+        assert result is not None
+        assert "expected date" in result
+
+    def test_dt_arabic_indic_digits_rejected(self):
+        result = check_element_data_type(
+            "\u0662\u0660\u0662\u0666\u0660\u0661\u0660\u0661", "DT", "E100"
+        )
+        assert result is not None
+
+    def test_tm_superscript_digits_rejected(self):
+        result = check_element_data_type("\u00b2\u00b2\u00b2\u00b2", "TM", "E100")
+        assert result is not None
+        assert "expected time" in result
+
+    def test_n_superscript_digit_rejected(self):
+        result = check_element_data_type("\u00b2", "N0", "E100")
+        assert result is not None
+        assert "numeric" in result.lower()
+
+    def test_n_arabic_indic_digits_rejected(self):
+        assert check_element_data_type("\u0663\u0663", "N0", "E100") is not None
+
+    def test_n_negative_arabic_indic_digit_rejected(self):
+        assert check_element_data_type("-\u0663", "N2", "E100") is not None
+
+    def test_r_arabic_indic_digits_rejected(self):
+        result = check_element_data_type("\u0663.5", "R", "E100")
+        assert result is not None
+        assert "decimal" in result
+
+    def test_r_trailing_newline_rejected(self):
+        """The R pattern is matched against the whole value ('$' allowed a trailing newline)."""
+        assert check_element_data_type("12\n", "R", "E100") is not None
+
+
 # =========================================================================
 # TestRelationalAdversarial
 # =========================================================================

@@ -61,6 +61,12 @@ def make_issue(
     )
 
 
+def _is_ascii_digits(value: str) -> bool:
+    # X12 numeric data is ASCII. str.isdigit() alone also accepts other Unicode
+    # digits, some of which ("²") int() rejects and others ("٣") it converts.
+    return value.isascii() and value.isdigit()
+
+
 # ---------------------------------------------------------------------------
 # Loop detection — navigation tree + assignment
 # ---------------------------------------------------------------------------
@@ -322,12 +328,6 @@ def _trailer_elements(raw_segment: Optional[str], segment_id: str) -> Optional[l
     return raw_segment[len(segment_id) + 1 :].split(raw_segment[len(segment_id)])
 
 
-def _is_count(value: str) -> bool:
-    # ASCII digits only: str.isdigit() alone accepts characters such as "²"
-    # that int() rejects.
-    return value.isascii() and value.isdigit()
-
-
 def _check_trailer(
     trailer_id: str,
     trailer: Optional[list[str]],
@@ -359,7 +359,7 @@ def _check_trailer(
 
     issues: list[ValidationIssue] = []
     count = trailer[0] if trailer else ""
-    if not _is_count(count):
+    if not _is_ascii_digits(count):
         issues.append(
             make_issue(
                 "error",
@@ -387,8 +387,8 @@ def _check_trailer(
         numeric_control
         and control
         and header_control
-        and _is_count(control)
-        and _is_count(header_control)
+        and _is_ascii_digits(control)
+        and _is_ascii_digits(header_control)
     ):
         matches = int(control) == int(header_control)
     else:
@@ -592,6 +592,7 @@ def check_element_data_type(
     - DT: calendar-aware date validation (uses ``calendar.monthrange``).
     - N-type: exactly one optional leading minus is allowed.
     - TM: seconds field (positions 4-5) validated to range 0-59 when present.
+    - N, DT, TM and R accept ASCII digits (0-9) only.
     """
     if not value or element_type == "B":
         return None
@@ -602,19 +603,19 @@ def check_element_data_type(
     if element_type and element_type.startswith("N"):
         # Numeric types: N, N0, N1, N2, etc. — digits only, optional single minus
         if value.startswith("-"):
-            if not (len(value) > 1 and value[1:].isdigit()):
+            if not (len(value) > 1 and _is_ascii_digits(value[1:])):
                 return (
                     f"Element {element_id}: expected numeric (type {element_type}), got '{value}'"
                 )
         else:
-            if not value.isdigit():
+            if not _is_ascii_digits(value):
                 return (
                     f"Element {element_id}: expected numeric (type {element_type}), got '{value}'"
                 )
         return None
 
     if element_type == "DT":
-        if len(value) not in (6, 8) or not value.isdigit():
+        if len(value) not in (6, 8) or not _is_ascii_digits(value):
             return f"Element {element_id}: expected date (YYMMDD or CCYYMMDD), got '{value}'"
         if len(value) == 8:
             year = int(value[0:4])
@@ -633,7 +634,7 @@ def check_element_data_type(
         return None
 
     if element_type == "TM":
-        if len(value) not in (4, 6, 8) or not value.isdigit():
+        if len(value) not in (4, 6, 8) or not _is_ascii_digits(value):
             return f"Element {element_id}: expected time (HHMM/HHMMSS/HHMMSSdd), got '{value}'"
         hh, mm_tm = int(value[0:2]), int(value[2:4])
         if not (0 <= hh <= 23) or not (0 <= mm_tm <= 59):
@@ -645,7 +646,7 @@ def check_element_data_type(
         return None
 
     if element_type == "R":
-        if not re.match(r"^-?\d+\.?\d*$", value):
+        if not re.fullmatch(r"-?[0-9]+\.?[0-9]*", value):
             return f"Element {element_id}: expected decimal number (type R), got '{value}'"
         return None
 

@@ -740,6 +740,29 @@ class TestCheckSegmentMaxUsePerIteration:
         assert len(issues) == 1
         assert "Segment N3 appears 2 time(s) but max use is 1 in loop N1" in issues[0]["message"]
 
+    def test_heading_and_nested_loops_with_same_id_counted_apart(self):
+        """A heading N1 loop and a PO1/N1 loop share a loop ID but not a count."""
+        n1_loop = {
+            "type": "loop",
+            "loop_id": "N1",
+            "segments": [
+                make_spec_segment("N1", max_use=1),
+                make_spec_segment("N3", max_use=2),
+                make_spec_segment("N4", max_use=1),
+            ],
+        }
+        spec = [
+            make_spec_segment("BEG", max_use=1),
+            n1_loop,
+            {"type": "loop", "loop_id": "PO1", "segments": [make_spec_segment("PO1"), n1_loop]},
+            make_spec_segment("CTT", max_use=1),
+        ]
+        seg_ids = ["BEG", "N1", "N3", "N4", "PO1", "N1", "N3", "N4", "CTT"]
+        parsed = [make_segment(seg_id, i) for i, seg_id in enumerate(seg_ids, start=1)]
+        assignments = assign_loop_paths(parsed, build_nav_tree(spec))
+        assert [lp for _, lp in assignments][1:8] == ["N1"] * 3 + ["PO1"] + ["PO1/N1"] * 3
+        assert check_segment_max_use(assignments, spec) == []
+
     def test_root_segments_counted_across_transaction(self):
         issues = self._issues(["BEG", "PO1", "CTT", "CTT"])
         assert len(issues) == 1

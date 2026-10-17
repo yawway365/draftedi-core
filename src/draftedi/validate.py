@@ -514,8 +514,9 @@ def check_segment_max_use(
     triggers: dict[str, str] = {}
     _collect_loop_triggers(build_nav_tree(spec_segments), triggers)
 
-    # Keyed by (segment_id, loop_id, iteration). Iteration numbers only grow per
-    # loop path, so every loop instance (including nested ones) gets its own key.
+    # Keyed by (segment_id, loop_path, iteration). Iteration numbers only grow per
+    # loop path, so every loop instance gets its own key, and loops sharing an ID
+    # at different depths (heading N1 vs PO1/N1) are counted apart.
     counts: dict[tuple[str, Optional[str], int], int] = {}
     iterations: dict[str, int] = {}
     for seg, loop_path in loop_assignments:
@@ -523,10 +524,11 @@ def check_segment_max_use(
         lid = leaf_loop(loop_path)
         if loop_path and lid is not None and triggers.get(lid) == seg_id:
             iterations[loop_path] = iterations.get(loop_path, 0) + 1
-        key = (seg_id, lid, iterations.get(loop_path or "", 0))
+        key = (seg_id, loop_path, iterations.get(loop_path or "", 0))
         counts[key] = counts.get(key, 0) + 1
 
-    for (seg_id_mu, lid_mu, _), count in counts.items():
+    for (seg_id_mu, path_mu, _), count in counts.items():
+        lid_mu = leaf_loop(path_mu)
         max_use = max_use_map.get((seg_id_mu, lid_mu))
         if max_use is None:
             continue

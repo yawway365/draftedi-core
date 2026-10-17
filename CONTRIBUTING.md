@@ -45,7 +45,7 @@ ruff format --check src tests  # formatting (100-char line length)
 mypy src                       # type checking (strict mode)
 ```
 
-All four must pass before opening a PR; CI runs the same checks. `pip install -e ".[dev]"` installs the ruff and mypy versions CI uses (pinned in the `lint` extra).
+All four must pass before opening a PR; CI runs the same checks. `pip install -e ".[dev]"` installs the ruff and mypy versions CI uses (pinned in the `lint` extra; on Python 3.9 you get mypy 1.19.1).
 
 ## How to Contribute
 

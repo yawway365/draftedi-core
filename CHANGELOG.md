@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.1] - Unreleased
 
-Bug fixes and a security fix. Some validation results change: read **Changed** before upgrading.
+Bug fixes and security fixes. Some validation results change: read **Changed** before upgrading.
 
 ### Security
 
@@ -50,7 +50,7 @@ Bug fixes and a security fix. Some validation results change: read **Changed** b
 - Packaging: the source distribution includes the test suite (tests, helpers and fixtures), and CI runs the tests from the built sdist.
 - Typing: `check_envelope()` and `X12Validator.validate_transaction()` accept any `Mapping[str, Any]`, so a `parse_edi_file()` `Transaction` passes type checking (it already worked at runtime).
 - Packaging: the license is declared as the SPDX expression `MIT` (`License-Expression` metadata); building the sdist now needs setuptools 77 or newer.
-- Packaging: optional extras are now `test` (pytest and plugins), `lint` (ruff 0.15.22 and mypy 1.20.2, pinned) and `dev` (both). CI and the publish workflow install the pinned `lint` extra.
+- Packaging: optional extras are now `test` (pytest and plugins), `lint` (ruff 0.15.22 and mypy 1.20.2, pinned; mypy 1.19.1 on Python 3.9) and `dev` (both). CI and the publish workflow install the pinned `lint` extra.
 - Python 3.13 is tested in CI and listed in the classifiers.
 - Documentation: the README describes the `validate_edi()` result semantics, error types, exceptions and known limitations, and uses absolute links so they work on PyPI. `MissingSpecError` is documented as not raised.
 

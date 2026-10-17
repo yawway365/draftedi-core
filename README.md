@@ -407,7 +407,7 @@ ruff format --check src tests
 mypy src
 ```
 
-The `dev` extra installs the `test` extra (pytest and plugins) and the `lint` extra (ruff and mypy, pinned to the versions CI uses).
+The `dev` extra installs the `test` extra (pytest and plugins) and the `lint` extra (ruff and mypy, pinned to the versions CI uses; on Python 3.9 it installs mypy 1.19.1, the last release that runs there).
 
 ## Contributing
 

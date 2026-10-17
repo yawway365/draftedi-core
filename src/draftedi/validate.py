@@ -649,8 +649,11 @@ def check_element_data_type(
         return None
 
     if element_type == "TM":
-        if len(value) not in (4, 6, 8) or not _is_ascii_digits(value):
-            return f"Element {element_id}: expected time (HHMM/HHMMSS/HHMMSSdd), got '{value}'"
+        # HHMM, HHMMSS, HHMMSSd or HHMMSSdd (tenths or hundredths of a second)
+        if len(value) not in (4, 6, 7, 8) or not _is_ascii_digits(value):
+            return (
+                f"Element {element_id}: expected time (HHMM/HHMMSS/HHMMSSd/HHMMSSdd), got '{value}'"
+            )
         hh, mm_tm = int(value[0:2]), int(value[2:4])
         if not (0 <= hh <= 23) or not (0 <= mm_tm <= 59):
             return f"Element {element_id}: invalid time '{value}'"

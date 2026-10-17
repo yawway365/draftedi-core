@@ -134,6 +134,20 @@ class TestCheckElementDataType:
     def test_tm_valid_8_digit(self):
         assert check_element_data_type("14302599", "TM", "E100") is None
 
+    def test_tm_valid_7_digit(self):
+        """HHMMSSd: seconds with one decimal digit."""
+        assert check_element_data_type("1430251", "TM", "E100") is None
+
+    def test_tm_7_digit_range_checked(self):
+        result = check_element_data_type("1460251", "TM", "E100")
+        assert result is not None
+        assert "invalid time" in result
+
+    def test_tm_invalid_length_5(self):
+        result = check_element_data_type("14302", "TM", "E100")
+        assert result is not None
+        assert "expected time" in result
+
     def test_tm_invalid_length_3(self):
         result = check_element_data_type("143", "TM", "E100")
         assert result is not None

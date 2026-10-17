@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 from typing import Optional, Union, Any
 
@@ -12,6 +14,21 @@ from draftedi.spec.protocol import (
     ElementSpec,
     RelationalCondition,
 )
+
+# version and ts_id come from document content (GS08, ST01) and become part of a
+# file path, so only the X12 formats are accepted: GS08 is 1-12 alphanumerics
+# (e.g. "005010", "005010X222A1") and ST01 is exactly three (e.g. "850"). This
+# rules out separators, "..", drive letters and NUL bytes.
+_VERSION_RE = re.compile(r"[A-Za-z0-9]{1,12}")
+_TS_ID_RE = re.compile(r"[A-Za-z0-9]{3}")
+
+
+def _is_valid_version(version: str) -> bool:
+    return isinstance(version, str) and _VERSION_RE.fullmatch(version) is not None
+
+
+def _is_valid_ts_id(ts_id: str) -> bool:
+    return isinstance(ts_id, str) and _TS_ID_RE.fullmatch(ts_id) is not None
 
 
 class JSONSkeletonSpecProvider:
@@ -35,28 +52,44 @@ class JSONSkeletonSpecProvider:
     ----------
     specs_dir : str or Path
         Directory containing skeleton JSON files named {version}-{tsid}.json.
+        A leading "~" is expanded to the user's home directory.
     """
 
     def __init__(self, specs_dir: Union[str, Path]) -> None:
-        self._dir = Path(specs_dir)
+        self._dir = Path(specs_dir).expanduser()
         self._cache: dict[str, dict[str, Any]] = {}
 
     def _load(self, version: str, ts_id: str) -> Optional[dict[str, Any]]:
         """Load and cache the JSON skeleton for (version, ts_id).
 
-        Returns None when the file does not exist; callers must handle None
-        rather than catching FileNotFoundError. Cache key is "{version}-{ts_id}".
-        Once cached, the dict is returned directly on subsequent calls without
-        re-reading disk. (ref: R-003)
+        Returns None when the file does not exist or when version/ts_id are not
+        valid X12 identifiers; callers must handle None rather than catching
+        FileNotFoundError. Cache key is "{version}-{ts_id}". Once cached, the dict
+        is returned directly on subsequent calls without re-reading disk. (ref: R-003)
         """
+        if not (_is_valid_version(version) and _is_valid_ts_id(ts_id)):
+            return None
         key = f"{version}-{ts_id}"
         if key not in self._cache:
-            path = self._dir / f"{key}.json"
-            if not path.exists():
+            path = self._spec_path(key)
+            if path is None or not path.is_file():
                 return None
             with open(path, encoding="utf-8") as f:
                 self._cache[key] = json.load(f)
         return self._cache[key]
+
+    def _spec_path(self, key: str) -> Optional[Path]:
+        """Return specs_dir/{key}.json, or None if it would fall outside specs_dir.
+
+        Defence in depth behind the identifier checks in _load(). The comparison
+        is lexical (abspath normalises ".."), so symlinks placed inside specs_dir
+        by its owner keep working.
+        """
+        base = os.path.abspath(self._dir)
+        path = os.path.abspath(os.path.join(base, f"{key}.json"))
+        if os.path.dirname(path) != base:
+            return None
+        return Path(path)
 
     def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
         """Return the TransactionSetSpec for (version, ts_id), or None if not found.
@@ -98,6 +131,8 @@ class JSONSkeletonSpecProvider:
         retrying. segment_name is None for the same reason as transaction_set_name.
         (ref: DL-004)
         """
+        if not _is_valid_version(version):
+            return None
         for key, spec in self._cache.items():
             if key.startswith(version + "-"):
                 seg = spec["segments"].get(segment_id)

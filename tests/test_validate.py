@@ -16,6 +16,7 @@ from draftedi.validate import (
     check_segment_max_use,
     SegEntry,
     LoopEntry,
+    _check_trailer,
 )
 from helpers import make_segment, make_spec_segment
 
@@ -133,6 +134,20 @@ class TestCheckElementDataType:
     def test_tm_valid_8_digit(self):
         assert check_element_data_type("14302599", "TM", "E100") is None
 
+    def test_tm_valid_7_digit(self):
+        """HHMMSSd: seconds with one decimal digit."""
+        assert check_element_data_type("1430251", "TM", "E100") is None
+
+    def test_tm_7_digit_range_checked(self):
+        result = check_element_data_type("1460251", "TM", "E100")
+        assert result is not None
+        assert "invalid time" in result
+
+    def test_tm_invalid_length_5(self):
+        result = check_element_data_type("14302", "TM", "E100")
+        assert result is not None
+        assert "expected time" in result
+
     def test_tm_invalid_length_3(self):
         result = check_element_data_type("143", "TM", "E100")
         assert result is not None
@@ -154,6 +169,26 @@ class TestCheckElementDataType:
 
     def test_r_valid_negative(self):
         assert check_element_data_type("-99.5", "R", "E100") is None
+
+    def test_r_leading_decimal_point_valid(self):
+        """X12 R allows a value with no integer part, e.g. PO1*3*1*EA*.5."""
+        assert check_element_data_type(".5", "R", "E100") is None
+        assert check_element_data_type("-.5", "R", "E100") is None
+
+    def test_r_trailing_decimal_point_valid(self):
+        assert check_element_data_type("1.", "R", "E100") is None
+
+    def test_r_without_digits_invalid(self):
+        for value in (".", "-", "-."):
+            assert check_element_data_type(value, "R", "E100") is not None, value
+
+    def test_r_long_invalid_value_is_linear(self):
+        """A long digit run followed by junk is rejected quickly (no quadratic backtracking)."""
+        import time
+
+        start = time.perf_counter()
+        assert check_element_data_type("9" * 50_000 + "x", "R", "E100") is not None
+        assert time.perf_counter() - start < 1.0
 
     def test_r_invalid_double_dot(self):
         result = check_element_data_type("12.3.4", "R", "E100")
@@ -236,10 +271,10 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_required_none_present_warns(self):
+    def test_required_none_present_errors(self):
         issues = check_relational_conditions("N1", [_make_rc("R", [1, 2])], {1: "", 2: ""})
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "Required" in issues[0]["message"]
 
     # Exclusion (E)
@@ -249,10 +284,10 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_exclusion_multiple_present_warns(self):
+    def test_exclusion_multiple_present_errors(self):
         issues = check_relational_conditions("N1", [_make_rc("E", [1, 2])], {1: "X", 2: "Y"})
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "Exclusion" in issues[0]["message"]
 
     # Conditional (C)
@@ -281,12 +316,12 @@ class TestCheckRelationalConditions:
         )
         assert len(issues) == 0
 
-    def test_list_first_present_no_rest_warns(self):
+    def test_list_first_present_no_rest_errors(self):
         issues = check_relational_conditions(
             "N1", [_make_rc("L", [1, 2, 3])], {1: "A", 2: "", 3: ""}
         )
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "List conditional" in issues[0]["message"]
 
     # Edge cases
@@ -315,12 +350,14 @@ class TestCheckEnvelope:
         issues = check_envelope(tx, parsed)
         assert len(issues) == 0
 
-    def test_count_mismatch_warns(self):
+    def test_count_mismatch_errors(self):
+        """Envelope findings are errors: X12 rejects a mismatched trailer."""
         tx = {"segment_count_reported": 10}
         parsed = [make_segment("BEG", 1), make_segment("CTT", 2)]
         issues = check_envelope(tx, parsed)
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["category"] == "envelope"
         assert "SE01 reports 10" in issues[0]["message"]
 
     def test_none_count_skips(self):
@@ -328,6 +365,120 @@ class TestCheckEnvelope:
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
         assert len(issues) == 0
+
+
+class TestCheckEnvelopeRawSE:
+    """parse_edi_file transactions carry raw_se_segment; SE01/SE02 come from it."""
+
+    def _tx(self, raw_se, control="0001"):
+        return {"control_number": control, "segment_count_reported": None, "raw_se_segment": raw_se}
+
+    def test_matching_trailer_passes(self):
+        parsed = [make_segment("BEG", 1)]
+        assert check_envelope(self._tx("SE*3*0001"), parsed) == []
+
+    def test_se02_mismatch_errors(self):
+        issues = check_envelope(self._tx("SE*3*0002"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["element_pos"] == 2
+        assert issues[0]["message"] == "SE02 control number '0002' does not match ST02 '0001'"
+
+    def test_se02_compares_as_text(self):
+        """ST02/SE02 are AN: '1' and '0001' are different control numbers."""
+        issues = check_envelope(self._tx("SE*3*1"), [make_segment("BEG", 1)])
+        assert [i["element_pos"] for i in issues] == [2]
+
+    def test_se01_mismatch_errors(self):
+        issues = check_envelope(self._tx("SE*9*0001"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["message"] == "SE01 reports 9 segments but actual count is 3"
+
+    def test_se01_non_numeric_errors(self):
+        issues = check_envelope(self._tx("SE*X*0001"), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert "SE01 value 'X' is not a valid count" in issues[0]["message"]
+
+    def test_se01_non_ascii_digit_errors(self):
+        """'²'.isdigit() is True but int('²') raises; it must be reported, not raise."""
+        issues = check_envelope(self._tx("SE*\u00b2*0001"), [])
+        assert "not a valid count" in issues[0]["message"]
+
+    def test_missing_se_errors(self):
+        issues = check_envelope(self._tx(None), [make_segment("BEG", 1)])
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "error"
+        assert issues[0]["message"] == "SE segment is missing for ST02 '0001'"
+
+    def test_se_without_elements_reports_count_and_control(self):
+        issues = check_envelope(self._tx("SE"), [])
+        assert [i["element_pos"] for i in issues] == [1, 2]
+
+    def test_huge_se01_does_not_raise(self):
+        issues = check_envelope(self._tx("SE*" + "9" * 5000 + "*0001"), [])
+        assert [i["element_pos"] for i in issues] == [1]
+
+    def test_padded_control_numbers_compared_trimmed(self):
+        """The parser keeps ST02 "0001 " when ST03 follows, but trims SE02."""
+        assert (
+            check_envelope(self._tx("SE*3*0001", control="0001 "), [make_segment("BEG", 1)]) == []
+        )
+
+    def test_padded_count_compared_trimmed(self):
+        assert check_envelope(self._tx("SE*3 *0001"), [make_segment("BEG", 1)]) == []
+
+    def test_non_str_control_number_compared_as_text(self):
+        """A hand-built dict may carry an int control_number; it must not raise."""
+        tx = {"control_number": 1, "raw_se_segment": "SE*2*1"}
+        assert check_envelope(tx, []) == []
+        tx = {"control_number": 2, "raw_se_segment": "SE*2*1"}
+        assert [i["message"] for i in check_envelope(tx, [])] == [
+            "SE02 control number '1' does not match ST02 2"
+        ]
+
+    def test_separator_read_from_segment(self):
+        """The element separator is whatever follows the segment ID."""
+        assert check_envelope(self._tx("SE|2|0001"), []) == []
+
+
+class TestCheckTrailer:
+    def test_numeric_control_compares_by_value(self):
+        """GS06/GE02 and ISA13/IEA02 are N0: '1' equals '000000001'."""
+        issues = _check_trailer("GE", ["1", "000000001"], 1, "transaction sets", "GS06", "1", True)
+        assert issues == []
+
+    def test_numeric_control_mismatch(self):
+        issues = _check_trailer("GE", ["1", "2"], 1, "transaction sets", "GS06", "1", True)
+        assert issues[0]["message"] == "GE02 control number '2' does not match GS06 '1'"
+
+    def test_numeric_control_non_digits_compare_as_text(self):
+        issues = _check_trailer("GE", ["1", "A"], 1, "transaction sets", "GS06", "1", True)
+        assert len(issues) == 1
+
+    def test_padded_numeric_control_compared_trimmed(self):
+        assert _check_trailer("GE", ["1", "1"], 1, "transaction sets", "GS06", "1 ", True) == []
+
+    def test_missing_control_number(self):
+        issues = _check_trailer("IEA", ["1"], 1, "functional groups", "ISA13", "000000001", True)
+        assert issues[0]["message"] == (
+            "IEA02 control number None does not match ISA13 '000000001'"
+        )
+
+    def test_huge_values_compared_without_int(self):
+        """int() refuses strings over 4,300 digits; trailer values are compared as text."""
+        big = "1" * 5000
+        assert (
+            _check_trailer("GE", ["1", "0" + big], 1, "transaction sets", "GS06", big, True) == []
+        )
+        issues = _check_trailer("GE", [big, big + "2"], 1, "transaction sets", "GS06", big, True)
+        assert [i["element_pos"] for i in issues] == [1, 2]
+        assert issues[0]["message"].endswith("transaction sets but actual count is 1")
+
+    def test_count_mismatch(self):
+        issues = _check_trailer(
+            "IEA", ["2", "000000001"], 1, "functional groups", "ISA13", "000000001", True
+        )
+        assert issues[0]["message"] == "IEA01 reports 2 functional groups but actual count is 1"
 
 
 # =========================================================================
@@ -567,12 +718,12 @@ class TestCheckSegmentMaxUse:
         issues = check_segment_max_use(assignments, spec)
         assert len(issues) == 0
 
-    def test_exceeded_warns(self):
+    def test_exceeded_errors(self):
         spec = [make_spec_segment("BEG", max_use=1)]
         assignments = [(make_segment("BEG", i), None) for i in range(1, 4)]
         issues = check_segment_max_use(assignments, spec)
         assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
+        assert issues[0]["severity"] == "error"
         assert "3 time(s)" in issues[0]["message"]
         assert "max use is 1" in issues[0]["message"]
 
@@ -587,6 +738,90 @@ class TestCheckSegmentMaxUse:
         assignments = [(make_segment("BEG", 1), None)]
         issues = check_segment_max_use(assignments, spec)
         assert len(issues) == 0
+
+
+class TestCheckSegmentMaxUsePerIteration:
+    """Max use applies per loop iteration; a new trigger segment starts a new one."""
+
+    @staticmethod
+    def _po1_spec():
+        return [
+            make_spec_segment("BEG", max_use=1),
+            {
+                "type": "loop",
+                "loop_id": "PO1",
+                "segments": [
+                    make_spec_segment("PO1", max_use=1),
+                    make_spec_segment("PID", max_use=2),
+                    {
+                        "type": "loop",
+                        "loop_id": "N1",
+                        "segments": [
+                            make_spec_segment("N1", max_use=1),
+                            make_spec_segment("N3", max_use=1),
+                        ],
+                    },
+                ],
+            },
+            make_spec_segment("CTT", max_use=1),
+        ]
+
+    def _issues(self, seg_ids):
+        spec = self._po1_spec()
+        parsed = [make_segment(seg_id, i) for i, seg_id in enumerate(seg_ids, start=1)]
+        return check_segment_max_use(assign_loop_paths(parsed, build_nav_tree(spec)), spec)
+
+    def test_two_loop_iterations_pass(self):
+        """Two PO1 iterations no longer count as two uses of PO1 (audit item 1)."""
+        assert self._issues(["BEG", "PO1", "PID", "PID", "PO1", "PID", "PID", "CTT"]) == []
+
+    def test_excess_within_one_iteration_reported(self):
+        issues = self._issues(["BEG", "PO1", "PID", "PID", "PID", "PO1", "PID", "CTT"])
+        assert len(issues) == 1
+        assert issues[0]["message"] == (
+            "Segment PID appears 3 time(s) but max use is 2 in loop PO1"
+        )
+
+    def test_each_offending_iteration_reported(self):
+        issues = self._issues(["PO1", "PID", "PID", "PID", "PO1", "PID", "PID", "PID"])
+        assert len(issues) == 2
+
+    def test_nested_loop_counted_per_iteration(self):
+        seg_ids = ["BEG", "PO1", "N1", "N3", "N1", "N3", "PO1", "N1", "N3"]
+        assert self._issues(seg_ids) == []
+
+    def test_nested_loop_excess_reported(self):
+        issues = self._issues(["BEG", "PO1", "N1", "N3", "N3", "PO1", "N1", "N3"])
+        assert len(issues) == 1
+        assert "Segment N3 appears 2 time(s) but max use is 1 in loop N1" in issues[0]["message"]
+
+    def test_heading_and_nested_loops_with_same_id_counted_apart(self):
+        """A heading N1 loop and a PO1/N1 loop share a loop ID but not a count."""
+        n1_loop = {
+            "type": "loop",
+            "loop_id": "N1",
+            "segments": [
+                make_spec_segment("N1", max_use=1),
+                make_spec_segment("N3", max_use=2),
+                make_spec_segment("N4", max_use=1),
+            ],
+        }
+        spec = [
+            make_spec_segment("BEG", max_use=1),
+            n1_loop,
+            {"type": "loop", "loop_id": "PO1", "segments": [make_spec_segment("PO1"), n1_loop]},
+            make_spec_segment("CTT", max_use=1),
+        ]
+        seg_ids = ["BEG", "N1", "N3", "N4", "PO1", "N1", "N3", "N4", "CTT"]
+        parsed = [make_segment(seg_id, i) for i, seg_id in enumerate(seg_ids, start=1)]
+        assignments = assign_loop_paths(parsed, build_nav_tree(spec))
+        assert [lp for _, lp in assignments][1:8] == ["N1"] * 3 + ["PO1"] + ["PO1/N1"] * 3
+        assert check_segment_max_use(assignments, spec) == []
+
+    def test_root_segments_counted_across_transaction(self):
+        issues = self._issues(["BEG", "PO1", "CTT", "CTT"])
+        assert len(issues) == 1
+        assert issues[0]["message"] == "Segment CTT appears 2 time(s) but max use is 1"
 
 
 # =========================================================================
@@ -668,6 +903,47 @@ class TestDataTypeAdversarial:
         assert result is not None
 
 
+class TestDataTypeNonAsciiDigits:
+    """X12 numeric data is ASCII; other Unicode digits are rejected, never raised on."""
+
+    def test_dt_superscript_digits_rejected(self):
+        """'²'.isdigit() is True but int('²') raises; this used to raise ValueError."""
+        result = check_element_data_type("\u00b2\u00b2\u00b2\u00b20101", "DT", "E100")
+        assert result is not None
+        assert "expected date" in result
+
+    def test_dt_arabic_indic_digits_rejected(self):
+        result = check_element_data_type(
+            "\u0662\u0660\u0662\u0666\u0660\u0661\u0660\u0661", "DT", "E100"
+        )
+        assert result is not None
+
+    def test_tm_superscript_digits_rejected(self):
+        result = check_element_data_type("\u00b2\u00b2\u00b2\u00b2", "TM", "E100")
+        assert result is not None
+        assert "expected time" in result
+
+    def test_n_superscript_digit_rejected(self):
+        result = check_element_data_type("\u00b2", "N0", "E100")
+        assert result is not None
+        assert "numeric" in result.lower()
+
+    def test_n_arabic_indic_digits_rejected(self):
+        assert check_element_data_type("\u0663\u0663", "N0", "E100") is not None
+
+    def test_n_negative_arabic_indic_digit_rejected(self):
+        assert check_element_data_type("-\u0663", "N2", "E100") is not None
+
+    def test_r_arabic_indic_digits_rejected(self):
+        result = check_element_data_type("\u0663.5", "R", "E100")
+        assert result is not None
+        assert "decimal" in result
+
+    def test_r_trailing_newline_rejected(self):
+        """The R pattern is matched against the whole value ('$' allowed a trailing newline)."""
+        assert check_element_data_type("12\n", "R", "E100") is not None
+
+
 # =========================================================================
 # TestRelationalAdversarial
 # =========================================================================
@@ -746,7 +1022,7 @@ class TestLoopPathAdversarial:
 
 class TestEnvelopeAdversarial:
     def test_negative_segment_count(self):
-        """Negative segment_count_reported triggers warning."""
+        """Negative segment_count_reported is reported."""
         tx = {"segment_count_reported": -5}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
@@ -754,22 +1030,22 @@ class TestEnvelopeAdversarial:
         assert "SE01 reports -5" in issues[0]["message"]
 
     def test_very_large_segment_count(self):
-        """Very large segment count triggers warning."""
+        """Very large segment count is reported."""
         tx = {"segment_count_reported": 999999999}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)
         assert len(issues) == 1
         assert "999999999" in issues[0]["message"]
 
-    def test_string_segment_count_warns(self):
-        """String segment_count_reported (type mismatch) triggers warning."""
+    def test_string_segment_count_reported(self):
+        """String segment_count_reported (type mismatch) is reported."""
         tx = {"segment_count_reported": "12"}
         parsed = [make_segment("BEG", 1)] * 10
         issues = check_envelope(tx, parsed)
         assert len(issues) == 1
 
     def test_zero_segment_count(self):
-        """Zero segment count always triggers warning."""
+        """Zero segment count is always reported."""
         tx = {"segment_count_reported": 0}
         parsed = [make_segment("BEG", 1)]
         issues = check_envelope(tx, parsed)

@@ -232,3 +232,370 @@ class TestX12Validator:
         assert X12Validator
         assert ValidationResult
         assert ValidationError
+
+
+# ---------------------------------------------------------------------------
+# Spec-driven providers and parsed transactions for the 1.3.1 fixes
+# ---------------------------------------------------------------------------
+
+
+class _SpecProvider:
+    """Structural subtype of X12SpecProvider serving one fixed spec and code list."""
+
+    def __init__(
+        self, segments: list[SegmentSpec], codes: Optional[dict[str, list[str]]] = None
+    ) -> None:
+        self._spec = _make_transaction_set_spec(segments)
+        self._codes = codes or {}
+
+    def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
+        return self._spec
+
+    def get_element_codes(self, version: str, element_id: str) -> list[str]:
+        return self._codes.get(element_id, [])
+
+    def get_segment_spec(self, version: str, segment_id: str) -> Optional[SegmentSpec]:
+        return None
+
+    def get_available_versions(self) -> list[str]:
+        return ["005010"]
+
+
+def _seg(segment_id: str, *values: str) -> dict:
+    return {
+        "segment_id": segment_id,
+        "elements": [{"element_pos": i, "value_text": v} for i, v in enumerate(values, start=1)],
+    }
+
+
+def _tx(*segments: dict) -> dict:
+    return {"transaction_set_id": "850", "segment_count_reported": None, "segments": list(segments)}
+
+
+def _po1_loop_spec() -> list[SegmentSpec]:
+    # Real X12 850: PO1 max use is 1 per iteration; the PO1 loop repeats.
+    return [
+        _make_segment_spec("BEG", requirement="M"),
+        _make_segment_spec("PO1", requirement="M", max_use=1, loop_id="PO1", loop_level=1),
+        _make_segment_spec("PID", max_use=1, loop_id="PO1", loop_level=1),
+        _make_segment_spec("CTT", max_use=1),
+    ]
+
+
+class TestX12ValidatorMaxUsePerIteration:
+    def test_two_po1_iterations_valid(self):
+        result = X12Validator(_SpecProvider(_po1_loop_spec())).validate_transaction(
+            _tx(_seg("BEG"), _seg("PO1"), _seg("PID"), _seg("PO1"), _seg("PID"), _seg("CTT")),
+            "005010",
+        )
+        assert result.is_valid is True
+        assert result.errors == []
+        assert result.warnings == []
+
+    def test_excess_within_iteration_is_error(self):
+        """Max-use issues are errors (X12 997 AK3 code 5) and make is_valid False."""
+        result = X12Validator(_SpecProvider(_po1_loop_spec())).validate_transaction(
+            _tx(_seg("BEG"), _seg("PO1"), _seg("PID"), _seg("PID")), "005010"
+        )
+        assert result.is_valid is False
+        assert result.warnings == []
+        assert [(e.segment_id, e.error_type, e.message) for e in result.errors] == [
+            (
+                "PID",
+                "MAX_USE_EXCEEDED",
+                "Segment PID appears 2 time(s) but max use is 1 in loop PO1",
+            )
+        ]
+
+
+class TestX12ValidatorEnvelope:
+    def test_envelope_checked_without_spec(self):
+        """A missing spec no longer skips the envelope check (audit item 4)."""
+        result = X12Validator(MinimalProvider()).validate_transaction(
+            {"transaction_set_id": "850", "segment_count_reported": 9, "segments": []},
+            "005010",
+        )
+        assert result.is_valid is None
+        assert [e.error_type for e in result.errors] == ["ENVELOPE_ERROR"]
+        assert result.errors[0].message == "SE01 reports 9 segments but actual count is 2"
+        assert any("No spec" in w for w in result.warnings)
+
+    def test_parser_transaction_control_number_checked(self):
+        """A Transaction from parse_edi_file() has its SE02 checked against ST02."""
+        from draftedi import parse_edi_file
+        from factories import SampleX12
+
+        text = SampleX12.build_interchange().replace("SE*5*0001", "SE*5*0002")
+        parsed = parse_edi_file(text.encode())
+        tx = parsed["interchanges"][0]["groups"][0]["transactions"][0]
+        result = X12Validator(_SpecProvider([])).validate_transaction(dict(tx), "005010")
+        assert result.is_valid is False
+        assert len(result.errors) == 1
+        assert result.errors[0].segment_id == "SE"
+        assert result.errors[0].element_pos == 2
+        assert result.errors[0].error_type == "ENVELOPE_ERROR"
+
+
+class TestX12ValidatorNonStrControlNumber:
+    def test_int_control_number_does_not_raise(self):
+        tx = {
+            "transaction_set_id": "850",
+            "control_number": 1,
+            "raw_se_segment": "SE*2*1",
+            "segments": [],
+        }
+        result = X12Validator(MinimalProvider()).validate_transaction(tx, "005010")
+        assert result.is_valid is None
+        assert result.errors == []
+
+
+class TestX12ValidatorMandatoryElements:
+    @staticmethod
+    def _provider() -> _SpecProvider:
+        return _SpecProvider(
+            [
+                _make_segment_spec(
+                    "BEG",
+                    elements=[
+                        _make_element_spec("353", 1, requirement="M"),
+                        _make_element_spec("92", 2, requirement="M"),
+                        _make_element_spec("324", 3, requirement="O"),
+                    ],
+                )
+            ]
+        )
+
+    def test_trailing_mandatory_element_omitted(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00")), "005010"
+        )
+        assert result.is_valid is False
+        assert len(result.errors) == 1
+        err = result.errors[0]
+        assert (err.segment_id, err.element_pos, err.error_type) == ("BEG", 2, "MISSING_MANDATORY")
+        assert err.value is None
+        assert err.message == "Mandatory element BEG02 (92) is missing"
+
+    def test_empty_mandatory_element(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "", "NE", "PO-1")), "005010"
+        )
+        assert [(e.element_pos, e.error_type) for e in result.errors] == [(1, "MISSING_MANDATORY")]
+
+    def test_optional_element_may_be_omitted(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00", "NE")), "005010"
+        )
+        assert result.is_valid is True
+
+    def test_composite_with_components_is_present(self):
+        """Composites have value_text None; any non-empty component counts as present."""
+        composite = {
+            "element_pos": 2,
+            "value_text": None,
+            "is_composite": 1,
+            "components": [{"component_pos": 1, "value_text": "NE"}],
+        }
+        seg = {"segment_id": "BEG", "elements": [{"element_pos": 1, "value_text": "00"}, composite]}
+        result = X12Validator(self._provider()).validate_transaction(_tx(seg), "005010")
+        assert result.is_valid is True
+
+    def test_repeated_element_present_in_any_repetition(self):
+        seg = {
+            "segment_id": "BEG",
+            "elements": [
+                {"element_pos": 1, "value_text": "00"},
+                {"element_pos": 2, "value_text": "NE"},
+                {"element_pos": 2, "value_text": ""},
+            ],
+        }
+        result = X12Validator(self._provider()).validate_transaction(_tx(seg), "005010")
+        assert result.is_valid is True
+
+
+class TestX12ValidatorElementChecks:
+    """Covers the per-element type, length and code checks."""
+
+    @staticmethod
+    def _provider() -> _SpecProvider:
+        return _SpecProvider(
+            [
+                _make_segment_spec(
+                    "BEG",
+                    elements=[
+                        _make_element_spec("353", 1, data_type="ID", min_length=2, max_length=2),
+                        _make_element_spec("373", 2, data_type="DT", min_length=8, max_length=8),
+                    ],
+                )
+            ],
+            codes={"353": ["00", "05"]},
+        )
+
+    def test_valid_values_pass(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00", "20260222")), "005010"
+        )
+        assert result.is_valid is True
+
+    def test_type_error(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00", "20261322")), "005010"
+        )
+        assert [(e.element_pos, e.error_type, e.value) for e in result.errors] == [
+            (2, "TYPE_ERROR", "20261322")
+        ]
+
+    def test_length_error(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00", "260222")), "005010"
+        )
+        assert [(e.element_pos, e.error_type) for e in result.errors] == [(2, "INVALID_LENGTH")]
+
+    def test_code_error(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "99", "20260222")), "005010"
+        )
+        assert [(e.element_pos, e.error_type, e.value) for e in result.errors] == [
+            (1, "INVALID_CODE", "99")
+        ]
+
+    def test_element_without_spec_ignored(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("BEG", "00", "20260222", "anything")), "005010"
+        )
+        assert result.is_valid is True
+
+
+class TestX12ValidatorRelationalSeverity:
+    @staticmethod
+    def _provider(condition_type: str) -> _SpecProvider:
+        seg = _make_segment_spec("N1")
+        seg["relational_conditions"] = [
+            {"condition_type": condition_type, "element_positions": [2, 3]}
+        ]
+        return _SpecProvider([seg])
+
+    def test_paired_violation_is_error(self):
+        result = X12Validator(self._provider("P")).validate_transaction(
+            _tx(_seg("N1", "BY", "Name")), "005010"
+        )
+        assert result.is_valid is False
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+
+    def test_required_violation_is_error(self):
+        result = X12Validator(self._provider("R")).validate_transaction(
+            _tx(_seg("N1", "BY")), "005010"
+        )
+        assert result.is_valid is False
+        assert result.warnings == []
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+        assert "Required condition" in result.errors[0].message
+
+    def test_exclusion_violation_is_error(self):
+        result = X12Validator(self._provider("E")).validate_transaction(
+            _tx(_seg("N1", "BY", "Name", "92")), "005010"
+        )
+        assert result.is_valid is False
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+
+    def test_list_conditional_violation_is_error(self):
+        result = X12Validator(self._provider("L")).validate_transaction(
+            _tx(_seg("N1", "BY", "Name")), "005010"
+        )
+        assert result.is_valid is False
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+
+    def test_composite_counts_as_present(self):
+        composite = {
+            "element_pos": 3,
+            "value_text": None,
+            "is_composite": 1,
+            "components": [{"component_pos": 1, "value_text": "X"}],
+        }
+        seg = {
+            "segment_id": "N1",
+            "elements": [
+                {"element_pos": 1, "value_text": "BY"},
+                {"element_pos": 2, "value_text": "Name"},
+                composite,
+            ],
+        }
+        result = X12Validator(self._provider("P")).validate_transaction(_tx(seg), "005010")
+        assert result.is_valid is True
+
+
+class TestRouteIssues:
+    def test_routes_by_severity(self):
+        """No built-in check emits "warning" now, but routing still honours it."""
+        from draftedi.validate import make_issue
+        from draftedi.validator.core import _route_issues
+
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
+        _route_issues(
+            [
+                make_issue("error", "envelope", "SE", None, 1, "count mismatch"),
+                make_issue("warning", "segment_max_use", "PO1", None, None, "advisory"),
+            ],
+            errors,
+            warnings,
+        )
+        assert [(e.segment_id, e.error_type, e.message) for e in errors] == [
+            ("SE", "ENVELOPE_ERROR", "count mismatch")
+        ]
+        assert warnings == ["advisory"]
+
+
+class TestX12ValidatorPerLoopSpecs:
+    """The same segment ID may have different element rules in different loops."""
+
+    @staticmethod
+    def _provider() -> _SpecProvider:
+        # Heading N1 loop: N102 optional, at most 10 chars. N1 loop nested in the
+        # PO1 loop (its own loop ID): N102 mandatory, up to 60 chars.
+        return _SpecProvider(
+            [
+                _make_segment_spec(
+                    "N1",
+                    loop_id="N1",
+                    loop_level=1,
+                    elements=[
+                        _make_element_spec("98", 1, requirement="M"),
+                        _make_element_spec("93", 2, requirement="O", max_length=10),
+                    ],
+                ),
+                _make_segment_spec("PO1", loop_id="PO1", loop_level=1),
+                _make_segment_spec(
+                    "N1",
+                    loop_id="PO1N1",
+                    loop_level=2,
+                    elements=[
+                        _make_element_spec("98", 1, requirement="M"),
+                        _make_element_spec("93", 2, requirement="M", max_length=60),
+                    ],
+                ),
+            ]
+        )
+
+    def test_mandatory_elements_use_the_segments_loop(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST"), _seg("PO1"), _seg("N1", "ST", "Ship To Name")), "005010"
+        )
+        assert result.is_valid is True, result.errors
+
+    def test_mandatory_element_missing_in_nested_loop(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST"), _seg("PO1"), _seg("N1", "ST")), "005010"
+        )
+        assert [(e.segment_id, e.element_pos, e.error_type) for e in result.errors] == [
+            ("N1", 2, "MISSING_MANDATORY")
+        ]
+
+    def test_element_lengths_use_the_segments_loop(self):
+        name = "A Rather Long Ship To Name"
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST", name), _seg("PO1"), _seg("N1", "ST", name)), "005010"
+        )
+        assert [(e.segment_id, e.element_pos, e.error_type) for e in result.errors] == [
+            ("N1", 2, "INVALID_LENGTH")
+        ]

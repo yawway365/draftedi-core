@@ -12,7 +12,7 @@ from typing import Optional
 
 from factories import SampleX12
 from draftedi import validate_edi, ValidationResult
-from draftedi.spec.protocol import TransactionSetSpec, SegmentSpec
+from draftedi.spec.protocol import ElementSpec, TransactionSetSpec, SegmentSpec
 
 
 # ---------------------------------------------------------------------------
@@ -478,3 +478,51 @@ class TestValidateEdiNeverRaises:
         result = validate_edi(_edi(version="../x"), spec_provider=JSONSkeletonSpecProvider(specs))
         assert result.is_valid is None
         assert any("No spec found for version='../x'" in w for w in result.warnings)
+
+
+class RefSpecProvider(MinimalProvider):
+    """Provider whose 850 spec has one REF segment with a numeric REF03."""
+
+    def get_transaction_set(self, version: str, ts_id: str) -> Optional[TransactionSetSpec]:
+        elements: list[ElementSpec] = [
+            ElementSpec(
+                element_id=f"E{seq}",
+                element_name=None,
+                data_type=data_type,
+                min_length=1,
+                max_length=30,
+                requirement="O",
+                sequence=seq,
+                repetition_count=1,
+            )
+            for seq, data_type in [(1, "AN"), (2, "AN"), (3, "N0")]
+        ]
+        ref = SegmentSpec(
+            segment_id="REF",
+            segment_name=None,
+            requirement="O",
+            max_use=0,
+            loop_id=None,
+            loop_level=0,
+            loop_repeat=0,
+            sequence=1,
+            area="HEADING",
+            elements=elements,
+            relational_conditions=[],
+        )
+        return TransactionSetSpec(
+            transaction_set_id="850",
+            transaction_set_name=None,
+            functional_group_id="PO",
+            segments=[ref],
+        )
+
+
+class TestValidateEdiRepetitions:
+    def test_repeated_element_keeps_its_position(self) -> None:
+        """REF02 repetitions must not shift REF03 to a later position."""
+        txn = "ST*850*0001~REF*PO*A^B*12~SE*3*0001~"
+        edi = SampleX12.build_interchange(groups=[SampleX12.build_group(transactions=[txn])])
+        result = validate_edi(edi, spec_provider=RefSpecProvider())
+        assert result.errors == []
+        assert result.is_valid is True

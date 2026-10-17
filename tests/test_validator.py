@@ -509,3 +509,25 @@ class TestX12ValidatorRelationalSeverity:
         }
         result = X12Validator(self._provider("P")).validate_transaction(_tx(seg), "005010")
         assert result.is_valid is True
+
+
+class TestRouteIssues:
+    def test_routes_by_severity(self):
+        """No built-in check emits "warning" now, but routing still honours it."""
+        from draftedi.validate import make_issue
+        from draftedi.validator.core import _route_issues
+
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
+        _route_issues(
+            [
+                make_issue("error", "envelope", "SE", None, 1, "count mismatch"),
+                make_issue("warning", "segment_max_use", "PO1", None, None, "advisory"),
+            ],
+            errors,
+            warnings,
+        )
+        assert [(e.segment_id, e.error_type, e.message) for e in errors] == [
+            ("SE", "ENVELOPE_ERROR", "count mismatch")
+        ]
+        assert warnings == ["advisory"]

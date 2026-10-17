@@ -364,7 +364,7 @@ def parse_edi_file(raw_bytes: bytes, source: str = "manual upload") -> ParsedFil
                 raise ValueError("Encountered SE but no active transaction")
 
             seg_count: Optional[int] = None
-            if len(seg_elements) > 0 and seg_elements[0].isdecimal():
+            if len(seg_elements) > 0 and seg_elements[0].isascii() and seg_elements[0].isdigit():
                 seg_count = int(seg_elements[0])
 
             current_tx["segment_count_reported"] = seg_count

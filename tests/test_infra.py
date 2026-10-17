@@ -53,3 +53,19 @@ class TestFixtureFiles:
     def test_sample_850_loads_non_empty_bytes(self, sample_850):
         assert isinstance(sample_850, bytes)
         assert len(sample_850) > 0
+
+
+class TestPackaging:
+    def test_version_matches_installed_metadata(self):
+        from importlib.metadata import version
+
+        import draftedi
+
+        assert draftedi.__version__ == version("draftedi")
+
+    def test_ships_py_typed_marker(self):
+        from pathlib import Path
+
+        import draftedi
+
+        assert (Path(draftedi.__file__).parent / "py.typed").is_file()

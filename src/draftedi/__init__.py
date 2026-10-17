@@ -9,8 +9,14 @@ All public names are listed in ``__all__``.
 
 from __future__ import annotations
 
-__version__ = "1.2.0"
+from importlib.metadata import PackageNotFoundError, version as _dist_version
 from typing import Optional
+
+# The version lives only in pyproject.toml; read it from the installed metadata.
+try:
+    __version__ = _dist_version("draftedi")
+except PackageNotFoundError:  # pragma: no cover - source tree that was never installed
+    __version__ = "0.0.0+unknown"
 
 from draftedi.parser import (
     parse_edi_file,

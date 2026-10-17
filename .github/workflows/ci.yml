@@ -16,12 +16,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      # ruff and mypy are pinned in the "lint" extra of pyproject.toml.
+      - run: pip install -e ".[lint]"
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
       # mypy enforces Protocol contract at CI time; type regressions pass
       # undetected without this step. (ref: DL-008)
-      - run: pip install mypy
       - run: mypy src/
 
   test:
@@ -29,13 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[test]"
       - run: pytest --cov=draftedi --cov-report=term-missing
 
   build:
@@ -46,8 +46,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install build
+      - run: pip install build twine
       - run: python -m build
+      - run: twine check --strict dist/*
+      # The sdist must carry everything its own test suite needs.
+      - name: Run the tests from the sdist
+        run: |
+          mkdir sdist-check
+          tar -xzf dist/*.tar.gz -C sdist-check --strip-components=1
+          pip install "./sdist-check[test]"
+          cd sdist-check && pytest -q -p no:cacheprovider
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -1,0 +1,5 @@
+# Ship what is needed to run the test suite from the sdist.
+include CHANGELOG.md SECURITY.md CONTRIBUTING.md
+recursive-include tests *.py *.edi *.json
+recursive-include specs *.md *.json
+global-exclude __pycache__ *.py[cod]

@@ -143,12 +143,13 @@ def _edi(
     iea01: str = "1",
     iea02: str = "000000001",
     version: str = "005010",
+    isa: str = _ISA,
 ) -> str:
     """One interchange/group/850 whose trailers are correct unless overridden."""
     body = _PO_BODY if body is None else body
     se01 = str(len(body) + 2) if se01 is None else se01
     return (
-        _ISA
+        isa
         + f"GS*PO*S*R*20260222*1200*1*X*{version}~"
         + "ST*850*0001~"
         + "".join(f"{s}~" for s in body)
@@ -356,6 +357,40 @@ class TestValidateEdiElements:
         assert [(e.error_type, e.message) for e in result.errors] == [
             ("MAX_USE_EXCEEDED", "Segment CTT appears 2 time(s) but max use is 1")
         ]
+
+
+class TestValidateEdiRelationalPresence:
+    """A Paired condition on XYZ01/XYZ02 sees composites and repetitions as data."""
+
+    # ISA11 "^" is the repetition separator, ISA16 ">" the component separator.
+    _ISA_GT = _ISA.replace("*P*:~", "*P*>~")
+
+    def _validate(self, tmp_path: Path, segment: str):
+        xyz = _skel_seg("O", 1)
+        xyz["relational_conditions"] = [{"type": "P", "positions": [1, 2]}]
+        provider = _provider(tmp_path, _skeleton({"XYZ": xyz}))
+        return validate_edi(_edi([segment], isa=self._ISA_GT), spec_provider=provider)
+
+    def test_composite_counts_as_present(self, tmp_path: Path) -> None:
+        result = self._validate(tmp_path, "XYZ*AA>BB*12")
+        assert result.is_valid is True, result.errors
+
+    def test_repetition_with_data_counts_as_present(self, tmp_path: Path) -> None:
+        """Only the last repetition used to count, so 'AA^' read as missing."""
+        result = self._validate(tmp_path, "XYZ*AA^*12")
+        assert result.is_valid is True, result.errors
+
+    def test_empty_composite_is_missing(self, tmp_path: Path) -> None:
+        result = self._validate(tmp_path, "XYZ*>*12")
+        assert [e.message for e in result.errors] == [
+            "Paired condition: if any of (XYZ01,XYZ02) is present, all must be present. "
+            "Missing: XYZ01"
+        ]
+
+    def test_empty_repetitions_are_missing(self, tmp_path: Path) -> None:
+        result = self._validate(tmp_path, "XYZ*^*12")
+        assert [e.error_type for e in result.errors] == ["RELATIONAL_CONDITION"]
+        assert result.errors[0].message.endswith("Missing: XYZ01")
 
 
 class TestValidateEdiNeverRaises:

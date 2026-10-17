@@ -156,6 +156,26 @@ class TestCheckElementDataType:
     def test_r_valid_negative(self):
         assert check_element_data_type("-99.5", "R", "E100") is None
 
+    def test_r_leading_decimal_point_valid(self):
+        """X12 R allows a value with no integer part, e.g. PO1*3*1*EA*.5."""
+        assert check_element_data_type(".5", "R", "E100") is None
+        assert check_element_data_type("-.5", "R", "E100") is None
+
+    def test_r_trailing_decimal_point_valid(self):
+        assert check_element_data_type("1.", "R", "E100") is None
+
+    def test_r_without_digits_invalid(self):
+        for value in (".", "-", "-."):
+            assert check_element_data_type(value, "R", "E100") is not None, value
+
+    def test_r_long_invalid_value_is_linear(self):
+        """A long digit run followed by junk is rejected quickly (no quadratic backtracking)."""
+        import time
+
+        start = time.perf_counter()
+        assert check_element_data_type("9" * 50_000 + "x", "R", "E100") is not None
+        assert time.perf_counter() - start < 1.0
+
     def test_r_invalid_double_dot(self):
         result = check_element_data_type("12.3.4", "R", "E100")
         assert result is not None

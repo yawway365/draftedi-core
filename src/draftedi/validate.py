@@ -661,7 +661,9 @@ def check_element_data_type(
         return None
 
     if element_type == "R":
-        if not re.fullmatch(r"-?[0-9]+\.?[0-9]*", value):
+        # "1", "1.", "1.5" and ".5", optionally signed. Each alternative is
+        # anchored by a literal or a digit run, so matching stays linear.
+        if not re.fullmatch(r"-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)", value):
             return f"Element {element_id}: expected decimal number (type R), got '{value}'"
         return None
 

@@ -52,10 +52,11 @@ class JSONSkeletonSpecProvider:
     ----------
     specs_dir : str or Path
         Directory containing skeleton JSON files named {version}-{tsid}.json.
+        A leading "~" is expanded to the user's home directory.
     """
 
     def __init__(self, specs_dir: Union[str, Path]) -> None:
-        self._dir = Path(specs_dir)
+        self._dir = Path(specs_dir).expanduser()
         self._cache: dict[str, dict[str, Any]] = {}
 
     def _load(self, version: str, ts_id: str) -> Optional[dict[str, Any]]:

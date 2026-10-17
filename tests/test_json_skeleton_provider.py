@@ -179,6 +179,17 @@ class TestJSONSkeletonSpecProvider:
         provider.get_transaction_set("005010", "850")
         assert len(provider._cache) == 1
 
+    def test_specs_dir_expands_home(self, tmp_path: Path, monkeypatch) -> None:
+        """The documented "~/.draftedi/specs/" form resolves under the home directory."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        specs = tmp_path / ".draftedi" / "specs"
+        specs.mkdir(parents=True)
+        _write_spec(specs, "005010", "850", _SAMPLE_850)
+        provider = JSONSkeletonSpecProvider("~/.draftedi/specs/")
+        assert provider.get_transaction_set("005010", "850") is not None
+        assert provider.get_available_versions() == ["005010"]
+
     def test_importable_from_draftedi_spec(self) -> None:
         from draftedi.spec import JSONSkeletonSpecProvider as JSP
 

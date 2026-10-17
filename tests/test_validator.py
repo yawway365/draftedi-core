@@ -531,3 +531,58 @@ class TestRouteIssues:
             ("SE", "ENVELOPE_ERROR", "count mismatch")
         ]
         assert warnings == ["advisory"]
+
+
+class TestX12ValidatorPerLoopSpecs:
+    """The same segment ID may have different element rules in different loops."""
+
+    @staticmethod
+    def _provider() -> _SpecProvider:
+        # Heading N1 loop: N102 optional, at most 10 chars. N1 loop nested in the
+        # PO1 loop (its own loop ID): N102 mandatory, up to 60 chars.
+        return _SpecProvider(
+            [
+                _make_segment_spec(
+                    "N1",
+                    loop_id="N1",
+                    loop_level=1,
+                    elements=[
+                        _make_element_spec("98", 1, requirement="M"),
+                        _make_element_spec("93", 2, requirement="O", max_length=10),
+                    ],
+                ),
+                _make_segment_spec("PO1", loop_id="PO1", loop_level=1),
+                _make_segment_spec(
+                    "N1",
+                    loop_id="PO1N1",
+                    loop_level=2,
+                    elements=[
+                        _make_element_spec("98", 1, requirement="M"),
+                        _make_element_spec("93", 2, requirement="M", max_length=60),
+                    ],
+                ),
+            ]
+        )
+
+    def test_mandatory_elements_use_the_segments_loop(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST"), _seg("PO1"), _seg("N1", "ST", "Ship To Name")), "005010"
+        )
+        assert result.is_valid is True, result.errors
+
+    def test_mandatory_element_missing_in_nested_loop(self):
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST"), _seg("PO1"), _seg("N1", "ST")), "005010"
+        )
+        assert [(e.segment_id, e.element_pos, e.error_type) for e in result.errors] == [
+            ("N1", 2, "MISSING_MANDATORY")
+        ]
+
+    def test_element_lengths_use_the_segments_loop(self):
+        name = "A Rather Long Ship To Name"
+        result = X12Validator(self._provider()).validate_transaction(
+            _tx(_seg("N1", "ST", name), _seg("PO1"), _seg("N1", "ST", name)), "005010"
+        )
+        assert [(e.segment_id, e.element_pos, e.error_type) for e in result.errors] == [
+            ("N1", 2, "INVALID_LENGTH")
+        ]

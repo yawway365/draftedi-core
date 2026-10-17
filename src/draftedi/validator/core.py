@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from draftedi.spec.protocol import X12SpecProvider, TransactionSetSpec
+from draftedi.spec.protocol import X12SpecProvider, TransactionSetSpec, SegmentSpec
 import draftedi.validate as _validate
 
 
@@ -179,6 +179,32 @@ def _spec_to_hierarchical(spec: TransactionSetSpec) -> list[dict[str, Any]]:
     return result
 
 
+def _segment_specs(
+    transaction: dict[str, Any], spec: TransactionSetSpec
+) -> list[tuple[dict[str, Any], Optional[SegmentSpec]]]:
+    """Pair each parsed segment with the SegmentSpec that governs it.
+
+    A segment ID may appear in several loops with different element rules, so
+    the spec is looked up by (segment_id, loop_id) of the loop the segment is
+    assigned to, keyed like validate.build_spec_lookup(). A segment assigned
+    outside every loop that defines it falls back to the first spec entry with
+    its ID. Loops that share a loop_id cannot be told apart. (ref: R-001)
+    """
+    by_loop: dict[tuple[str, Optional[str]], SegmentSpec] = {}
+    by_id: dict[str, SegmentSpec] = {}
+    for seg_spec in spec["segments"]:
+        by_loop.setdefault((seg_spec["segment_id"], seg_spec["loop_id"]), seg_spec)
+        by_id.setdefault(seg_spec["segment_id"], seg_spec)
+    root = _validate.build_nav_tree(_spec_to_hierarchical(spec))
+    parsed_segments: list[Any] = transaction.get("segments", [])
+    pairs: list[tuple[dict[str, Any], Optional[SegmentSpec]]] = []
+    for seg, loop_path in _validate.assign_loop_paths(parsed_segments, root):
+        seg_id: str = seg["segment_id"]
+        key = (seg_id, _validate.leaf_loop(loop_path))
+        pairs.append((seg, by_loop.get(key, by_id.get(seg_id))))
+    return pairs
+
+
 class X12Validator:
     """Stateless X12 transaction validator backed by an X12SpecProvider.
 
@@ -277,12 +303,10 @@ class X12Validator:
         # Trailing elements omitted from the segment text are missing too, so the
         # element specs are walked rather than the parsed elements.
         errors: list[ValidationError] = []
-        spec_by_id = {s["segment_id"]: s for s in spec["segments"]}
-        for seg in transaction.get("segments", []):
-            seg_id: str = seg.get("segment_id", "")
-            seg_spec = spec_by_id.get(seg_id)
+        for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:
                 continue
+            seg_id: str = seg["segment_id"]
             val_by_pos = _element_values(seg)
             for espec in seg_spec["elements"]:
                 pos = espec["sequence"]
@@ -307,12 +331,10 @@ class X12Validator:
         # but delegates all type/length logic to validate.py functions unchanged.
         # Code validation runs only for ID-typed elements with codes. (ref: DL-001)
         errors: list[ValidationError] = []
-        spec_by_id = {s["segment_id"]: s for s in spec["segments"]}
-        for seg in transaction.get("segments", []):
-            seg_id: str = seg.get("segment_id", "")
-            seg_spec = spec_by_id.get(seg_id)
+        for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:
                 continue
+            seg_id: str = seg["segment_id"]
             elem_specs = {e["sequence"]: e for e in seg_spec["elements"]}
             for elem in seg.get("elements", []):
                 pos: int = elem.get("element_pos", 0)
@@ -368,12 +390,10 @@ class X12Validator:
         # validate.py rc dict format; all condition logic stays in validate.py.
         # (ref: DL-001, R-002)
         issues: list[_validate.ValidationIssue] = []
-        spec_by_id = {s["segment_id"]: s for s in spec["segments"]}
-        for seg in transaction.get("segments", []):
-            seg_id = seg.get("segment_id", "")
-            seg_spec = spec_by_id.get(seg_id)
+        for seg, seg_spec in _segment_specs(transaction, spec):
             if seg_spec is None:
                 continue
+            seg_id = seg["segment_id"]
             val_by_pos = _element_values(seg)
             rc_list = [
                 {

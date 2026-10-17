@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import pytest
 
-from draftedi.parser import parse_interchange, parse_edi_file
+from draftedi.parser import parse_interchange, parse_edi_file, Transaction
 from factories import SampleX12
 from helpers import to_bytes
 
@@ -39,14 +41,14 @@ class TestParseInterchange:
         assert result["isa_parts"][0] == "ISA"
         assert len(result["isa_parts"]) == 17
 
-    def test_blank_repetition_sep_kept_as_space(self) -> None:
+    def test_blank_repetition_sep_is_none(self) -> None:
         isa = (
             "ISA*00*          *00*          "
             "*ZZ*TESTSENDER     *ZZ*TESTRECEIVER   "
             "*231117*0041* *00501*000000001*0*T*>~"
         )
         result = parse_interchange(isa)
-        assert result["repetition_sep"] == " "
+        assert result["repetition_sep"] is None
 
     def test_not_starting_with_isa_raises(self) -> None:
         with pytest.raises(ValueError, match="does not start with ISA"):
@@ -309,6 +311,127 @@ class TestParseEdiFileMultiEnvelope:
         # Segments inside second interchange are parsed with | element sep
         tx2 = ic2_result["groups"][0]["transactions"][0]
         assert tx2["transaction_set_id"] == "850"
+
+
+# =========================================================================
+# Repetition separator — ISA11 meaning depends on the ISA12 version
+# =========================================================================
+
+
+def _isa(isa11: str, isa12: str) -> str:
+    """Build a 106-character ISA header with the given ISA11 and ISA12."""
+    return (
+        "ISA*00*          *00*          "
+        "*ZZ*TESTSENDER     *ZZ*TESTRECEIVER   "
+        f"*231117*0041*{isa11}*{isa12}*000000001*0*T*>~"
+    )
+
+
+def _build_interchange(isa11: str, isa12: str, txn: str) -> str:
+    """Wrap one transaction in an interchange with the given ISA11 and ISA12."""
+    group = SampleX12.build_group(x12_version=f"{isa12}0", transactions=[txn])
+    return _isa(isa11, isa12) + group + "IEA*1*000000001~"
+
+
+def _values(tx: Transaction, seg_id: str) -> list[Optional[str]]:
+    """Return the element values of the first ``seg_id`` segment in ``tx``."""
+    seg = next(s for s in tx["segments"] if s["segment_id"] == seg_id)
+    return [e["value_text"] for e in seg["elements"]]
+
+
+class TestRepetitionSeparatorByVersion:
+    @pytest.mark.parametrize(
+        ("isa11", "isa12", "expected"),
+        [
+            ("U", "00401", None),  # ISA11 is the Interchange Control Standards Identifier
+            ("^", "00401", None),  # no repetition separator before 00402, whatever ISA11 holds
+            ("U", "00200", None),
+            ("^", "00402", "^"),  # first version with a repetition separator
+            ("^", "00501", "^"),
+            ("!", "00801", "!"),
+            ("U", "00501", None),  # 004010 identifier left in a 00501 header
+            ("A", "00501", None),
+            ("7", "00501", None),
+            ("^", "0050A", None),  # malformed ISA12
+            ("^", "     ", None),
+        ],
+    )
+    def test_parse_interchange_repetition_sep(
+        self, isa11: str, isa12: str, expected: Optional[str]
+    ) -> None:
+        assert parse_interchange(_isa(isa11, isa12))["repetition_sep"] == expected
+
+    def test_004010_850_values_containing_u_intact(self, sample_850_004010: bytes) -> None:
+        result = parse_edi_file(sample_850_004010)
+        ic = result["interchanges"][0]
+        assert ic["version"] == "00401"
+        assert ic["repetition_sep"] is None
+        tx = ic["groups"][0]["transactions"][0]
+        assert _values(tx, "BEG") == ["00", "SA", "PUR-123", "", "20260101"]
+        assert _values(tx, "CUR") == ["BY", "USD"]
+        assert _values(tx, "N1") == ["ST", "UNITED STATES SUPPLY", "92", "US-0042"]
+        assert _values(tx, "N3") == ["1200 UNIVERSITY BLVD"]
+        assert _values(tx, "PO1")[-1] == "UMB-200"
+        assert all(e["repetition_index"] == 1 for s in tx["segments"] for e in s["elements"])
+
+    def test_004010_997_values_containing_u_intact(self, sample_997_004010: bytes) -> None:
+        result = parse_edi_file(sample_997_004010)
+        tx = result["interchanges"][0]["groups"][0]["transactions"][0]
+        assert _values(tx, "AK3") == ["CUR", "3", "", "8"]
+        assert _values(tx, "AK4") == ["2", "100", "7", "USX"]
+
+    def test_004010_component_sep_still_applies(self) -> None:
+        txn = "ST*837*0001~SV1*HC>99213>25*50*UN*1~SE*3*0001~"
+        result = parse_edi_file(to_bytes(_build_interchange("U", "00401", txn)))
+        tx = result["interchanges"][0]["groups"][0]["transactions"][0]
+        sv101 = tx["segments"][0]["elements"][0]
+        assert sv101["is_composite"] == 1
+        assert [c["value_text"] for c in sv101["components"]] == ["HC", "99213", "25"]
+        assert _values(tx, "SV1") == [None, "50", "UN", "1"]
+
+    def test_005010_caret_splits_repetitions(self) -> None:
+        txn = "ST*850*0001~REF*PO*UNIT^USD~SE*3*0001~"
+        result = parse_edi_file(to_bytes(_build_interchange("^", "00501", txn)))
+        tx = result["interchanges"][0]["groups"][0]["transactions"][0]
+        assert _values(tx, "REF") == ["PO", "UNIT", "USD"]
+        assert [e["repetition_index"] for e in tx["segments"][0]["elements"]] == [1, 1, 2]
+
+    def test_005010_isa11_u_does_not_split(self) -> None:
+        txn = "ST*850*0001~N1*ST*UNITED STATES SUPPLY~SE*3*0001~"
+        result = parse_edi_file(to_bytes(_build_interchange("U", "00501", txn)))
+        ic = result["interchanges"][0]
+        assert ic["repetition_sep"] is None
+        assert _values(ic["groups"][0]["transactions"][0], "N1") == ["ST", "UNITED STATES SUPPLY"]
+
+    def test_blank_isa11_does_not_split_on_spaces(self) -> None:
+        txn = "ST*850*0001~N1*ST*UNITED STATES SUPPLY~SE*3*0001~"
+        result = parse_edi_file(to_bytes(_build_interchange(" ", "00501", txn)))
+        ic = result["interchanges"][0]
+        assert ic["repetition_sep"] is None
+        assert _values(ic["groups"][0]["transactions"][0], "N1") == ["ST", "UNITED STATES SUPPLY"]
+
+    def test_malformed_isa12_does_not_split(self) -> None:
+        txn = "ST*850*0001~REF*PO*UNIT^USD~SE*3*0001~"
+        result = parse_edi_file(to_bytes(_build_interchange("^", "0050A", txn)))
+        ic = result["interchanges"][0]
+        assert ic["repetition_sep"] is None
+        assert _values(ic["groups"][0]["transactions"][0], "REF") == ["PO", "UNIT^USD"]
+
+    def test_004010_interchange_does_not_inherit_earlier_repetition_sep(self) -> None:
+        txn = "ST*850*0001~REF*PO*UNIT^USD~SE*3*0001~"
+        edi = _build_interchange("^", "00501", txn) + _build_interchange("U", "00401", txn)
+        ic1, ic2 = parse_edi_file(to_bytes(edi))["interchanges"]
+        assert ic1["repetition_sep"] == "^"
+        assert _values(ic1["groups"][0]["transactions"][0], "REF") == ["PO", "UNIT", "USD"]
+        assert ic2["repetition_sep"] is None
+        assert _values(ic2["groups"][0]["transactions"][0], "REF") == ["PO", "UNIT^USD"]
+
+    def test_005010_interchange_after_004010_splits_repetitions(self) -> None:
+        txn = "ST*850*0001~REF*PO*UNIT^USD~SE*3*0001~"
+        edi = _build_interchange("U", "00401", txn) + _build_interchange("^", "00501", txn)
+        ic1, ic2 = parse_edi_file(to_bytes(edi))["interchanges"]
+        assert _values(ic1["groups"][0]["transactions"][0], "REF") == ["PO", "UNIT^USD"]
+        assert _values(ic2["groups"][0]["transactions"][0], "REF") == ["PO", "UNIT", "USD"]
 
 
 # =========================================================================

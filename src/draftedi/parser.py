@@ -103,6 +103,22 @@ class SeparatorInfo(TypedDict):
 # ---------------------------------------------------------------------------
 
 
+def _repetition_separator(isa11: Optional[str], isa12: Optional[str]) -> Optional[str]:
+    """Return ISA11 as the repetition separator, or ``None`` if the interchange has none.
+
+    ISA11 is the repetition separator only from ISA12 version 00402 onward; earlier
+    versions use it for the Interchange Control Standards Identifier, normally ``U``,
+    and splitting on it would corrupt values such as ``PUR-123``.  A malformed ISA12,
+    or a blank or alphanumeric ISA11 (such as a ``U`` left in a 00501 header), also
+    yields ``None``: letters, digits and spaces occur in ordinary data.
+    """
+    if not isa11 or isa11.isspace() or isa11.isalnum():
+        return None
+    if isa12 is None or not isa12.isdecimal() or int(isa12) < 402:
+        return None
+    return isa11
+
+
 def parse_interchange(x12_text: str) -> SeparatorInfo:
     """Detect element/component/repetition separators and segment terminator from the ISA header.
 
@@ -116,8 +132,10 @@ def parse_interchange(x12_text: str) -> SeparatorInfo:
     Returns:
         A ``SeparatorInfo`` dict with keys ``element_sep``, ``segment_term``,
         ``repetition_sep``, ``component_sep``, ``raw_isa``, and ``isa_parts``.
-        ``repetition_sep`` and ``component_sep`` are ``None`` when the
-        corresponding ISA field is absent or empty.
+        ``repetition_sep`` is ``None`` when the interchange has no repetition
+        separator: ISA12 is before 00402 or malformed, or ISA11 is absent, blank
+        or alphanumeric (e.g. ``U``).  ``component_sep`` is ``None`` when ISA16
+        is absent or empty.
 
     Raises:
         ValueError: If the text does not start with ``ISA`` or is shorter than
@@ -134,14 +152,16 @@ def parse_interchange(x12_text: str) -> SeparatorInfo:
     raw_isa = x12_text[0:106]
     isa_parts = raw_isa.split(element_sep)
 
-    repetition_sep: Optional[str] = isa_parts[11] if len(isa_parts) > 11 else None
+    repetition_sep = _repetition_separator(
+        isa_parts[11] if len(isa_parts) > 11 else None,
+        isa_parts[12] if len(isa_parts) > 12 else None,
+    )
     # isa_parts[16] may be an empty string; indexing [0] on an empty string raises IndexError.
     component_sep: Optional[str] = (
         isa_parts[16][0] if len(isa_parts) > 16 and isa_parts[16] else None
     )
 
     # Normalize blanks
-    repetition_sep = repetition_sep if repetition_sep else None
     component_sep = component_sep if component_sep else None
 
     return SeparatorInfo(
@@ -172,7 +192,10 @@ def parse_edi_file(raw_bytes: bytes, source: str = "manual upload") -> ParsedFil
 
     Separator detection from the first ISA header completes before any segment
     is parsed.  Each subsequent ISA header overrides the active repetition and
-    component separators for elements within that interchange.
+    component separators for elements within that interchange.  Element values
+    are split into repetitions only when the interchange's ISA12 version defines
+    a repetition separator (00402 and later); in earlier versions ISA11 is the
+    Interchange Control Standards Identifier (normally ``U``) and is ignored.
 
     Segments outside ST/SE envelopes (between GS and ST) are silently ignored.
 
@@ -239,12 +262,15 @@ def parse_edi_file(raw_bytes: bytes, source: str = "manual upload") -> ParsedFil
             usage_indicator: Optional[str] = isa_parts[15] if len(isa_parts) > 15 else None
             version: Optional[str] = isa_parts[12] if len(isa_parts) > 12 else None
 
-            # Per-interchange separator overrides (ISA11 = repetition, ISA16 = component)
-            ic_rep_sep: Optional[str] = isa_parts[11] if len(isa_parts) > 11 else None
+            # Per-interchange separator overrides (ISA11 = repetition, ISA16 = component).
+            # The repetition separator never falls back to the first ISA's: an interchange
+            # without one (e.g. 00401, where ISA11 is "U") must not split element values.
+            ic_rep_sep = _repetition_separator(
+                isa_parts[11] if len(isa_parts) > 11 else None, version
+            )
             ic_comp_sep: Optional[str] = (
                 isa_parts[16][0] if len(isa_parts) > 16 and isa_parts[16] else None
             )
-            ic_rep_sep = ic_rep_sep if ic_rep_sep and ic_rep_sep.strip() else repetition_sep
             ic_comp_sep = ic_comp_sep if ic_comp_sep and ic_comp_sep.strip() else component_sep
 
             current_interchange = Interchange(
@@ -340,7 +366,7 @@ def parse_edi_file(raw_bytes: bytes, source: str = "manual upload") -> ParsedFil
             ic_rep_sep_active: Optional[str] = repetition_sep
             ic_comp_sep_active: Optional[str] = component_sep
             if current_interchange is not None:
-                ic_rep_sep_active = current_interchange.get("repetition_sep") or repetition_sep
+                ic_rep_sep_active = current_interchange["repetition_sep"]
                 ic_comp_sep_active = current_interchange.get("component_sep") or component_sep
 
             seg_elements_parsed: list[Element] = []

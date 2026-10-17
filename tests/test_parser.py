@@ -620,6 +620,15 @@ class TestParserBoundary:
         tx = result["interchanges"][0]["groups"][0]["transactions"][0]
         assert tx["segment_count_reported"] is None
 
+    def test_se_superscript_count(self) -> None:
+        """SE01 '²' passes str.isdigit() but not int(); it is None, not a crash."""
+        txn = "ST*850*0001~BEG*00*NE~SE*²*0001~"
+        group = SampleX12.build_group(transactions=[txn])
+        edi = SampleX12.build_interchange(groups=[group])
+        result = parse_edi_file(to_bytes(edi))
+        tx = result["interchanges"][0]["groups"][0]["transactions"][0]
+        assert tx["segment_count_reported"] is None
+
 
 # =========================================================================
 # Adversarial — separator conflicts
